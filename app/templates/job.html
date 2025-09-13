@@ -1,0 +1,743 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="文字起こし処理状況 - {{ job_id }}" />
+  <!-- セキュリティヘッダー -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline';" />
+  <meta http-equiv="X-Content-Type-Options" content="nosniff" />
+  <meta http-equiv="X-Frame-Options" content="DENY" />
+  <meta http-equiv="X-XSS-Protection" content="1; mode=block" />
+  
+  <title>文字起こし処理: {{ filename or "ファイル" }}</title>
+  
+  <style>
+    :root {
+      --primary-color: #2563eb;
+      --primary-hover: #1d4ed8;
+      --success-color: #16a34a;
+      --warning-color: #d97706;
+      --error-color: #dc2626;
+      --border-color: #e5e7eb;
+      --text-color: #374151;
+      --text-muted: #6b7280;
+      --bg-card: #ffffff;
+      --bg-hover: #f9fafb;
+      --bg-success: #f0fdf4;
+      --bg-warning: #fffbeb;
+      --bg-error: #fef2f2;
+      --shadow: 0 1px 3px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.06);
+    }
+    
+    * {
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      line-height: 1.6;
+      color: var(--text-color);
+      background-color: #f8fafc;
+      max-width: 1000px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    
+    .header {
+      text-align: center;
+      margin-bottom: 40px;
+    }
+    
+    .header h1 {
+      color: var(--primary-color);
+      margin-bottom: 8px;
+      font-weight: 700;
+    }
+    
+    .header .filename {
+      color: var(--text-muted);
+      font-size: 16px;
+      word-break: break-word;
+    }
+    
+    .breadcrumb {
+      margin-bottom: 24px;
+    }
+    
+    .breadcrumb a {
+      color: var(--primary-color);
+      text-decoration: none;
+    }
+    
+    .breadcrumb a:hover {
+      text-decoration: underline;
+    }
+    
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 24px;
+      margin-bottom: 24px;
+      box-shadow: var(--shadow);
+    }
+    
+    .card h2 {
+      margin-top: 0;
+      margin-bottom: 20px;
+      color: var(--text-color);
+      font-weight: 600;
+      font-size: 1.25rem;
+    }
+    
+    .progress-container {
+      margin-bottom: 16px;
+    }
+    
+    .progress {
+      width: 100%;
+      height: 20px;
+      background-color: var(--bg-hover);
+      border-radius: 10px;
+      overflow: hidden;
+      box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.1);
+    }
+    
+    .progress-bar {
+      height: 100%;
+      background: linear-gradient(90deg, var(--primary-color), var(--primary-hover));
+      border-radius: 10px;
+      transition: width 0.5s ease;
+      position: relative;
+    }
+    
+    .progress-bar.success {
+      background: linear-gradient(90deg, var(--success-color), #15803d);
+    }
+    
+    .progress-bar.error {
+      background: linear-gradient(90deg, var(--error-color), #b91c1c);
+    }
+    
+    .progress-info {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 8px;
+      font-size: 14px;
+    }
+    
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      border: 1px solid var(--border-color);
+    }
+    
+    .status-badge.queued {
+      background: var(--bg-hover);
+      color: var(--text-muted);
+    }
+    
+    .status-badge.running {
+      background: var(--bg-warning);
+      border-color: var(--warning-color);
+      color: var(--warning-color);
+    }
+    
+    .status-badge.done {
+      background: var(--bg-success);
+      border-color: var(--success-color);
+      color: var(--success-color);
+    }
+    
+    .status-badge.error {
+      background: var(--bg-error);
+      border-color: var(--error-color);
+      color: var(--error-color);
+    }
+    
+    .download-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 12px 20px;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      text-decoration: none;
+      color: var(--text-color);
+      background: white;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-align: center;
+    }
+    
+    .btn:hover {
+      background: var(--bg-hover);
+      border-color: var(--primary-color);
+      transform: translateY(-1px);
+    }
+    
+    .btn-primary {
+      background: var(--primary-color);
+      color: white;
+      border-color: var(--primary-color);
+    }
+    
+    .btn-primary:hover {
+      background: var(--primary-hover);
+      border-color: var(--primary-hover);
+    }
+    
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
+    
+    .metadata {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+      padding: 16px;
+      background: var(--bg-hover);
+      border-radius: 8px;
+      font-size: 14px;
+    }
+    
+    .metadata-item {
+      display: flex;
+      flex-direction: column;
+    }
+    
+    .metadata-label {
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-bottom: 4px;
+    }
+    
+    .metadata-value {
+      color: var(--text-color);
+      word-break: break-word;
+    }
+    
+    .preview {
+      background: var(--bg-hover);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 20px;
+      font-family: ui-monospace, SFMono-Regular, "SF Mono", Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-size: 14px;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      max-height: 500px;
+      overflow-y: auto;
+      color: var(--text-color);
+    }
+    
+    .preview:empty::after {
+      content: "処理完了後にプレビューが表示されます...";
+      color: var(--text-muted);
+      font-style: italic;
+    }
+    
+    .loading {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      border: 2px solid var(--border-color);
+      border-radius: 50%;
+      border-top-color: var(--primary-color);
+      animation: spin 1s ease-in-out infinite;
+    }
+    
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    
+    .pulse {
+      animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+    
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+    
+    .error-message {
+      background: var(--bg-error);
+      border: 1px solid var(--error-color);
+      border-radius: 8px;
+      padding: 16px;
+      color: var(--error-color);
+      margin-bottom: 20px;
+    }
+    
+    .success-message {
+      background: var(--bg-success);
+      border: 1px solid var(--success-color);
+      border-radius: 8px;
+      padding: 16px;
+      color: var(--success-color);
+      margin-bottom: 20px;
+    }
+    
+    .actions {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-top: 20px;
+    }
+    
+    .copy-btn {
+      position: relative;
+    }
+    
+    .copy-success {
+      position: absolute;
+      top: -30px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--success-color);
+      color: white;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      white-space: nowrap;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+    
+    .copy-success.show {
+      opacity: 1;
+    }
+    
+    @media (max-width: 768px) {
+      body {
+        padding: 16px;
+      }
+      
+      .download-grid {
+        grid-template-columns: 1fr;
+      }
+      
+      .metadata {
+        grid-template-columns: 1fr;
+      }
+      
+      .actions {
+        flex-direction: column;
+      }
+      
+      .btn {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="breadcrumb">
+    <a href="/" aria-label="ホームに戻る">← ホームに戻る</a>
+  </div>
+
+  <div class="header">
+    <h1>🎤 文字起こし処理</h1>
+    <div class="filename">{{ filename or "処理中のファイル" }}</div>
+  </div>
+
+  <section class="card">
+    <h2>📊 処理状況</h2>
+    <div class="progress-container">
+      <div class="progress">
+        <div id="progress-bar" class="progress-bar" style="width: 0%"></div>
+      </div>
+      <div class="progress-info">
+        <span id="progress-text">0%</span>
+        <span id="status-badge" class="status-badge queued">
+          <div class="loading"></div>
+          待機中
+        </span>
+      </div>
+    </div>
+    
+    <div id="error-container" style="display: none;">
+      <div class="error-message">
+        <strong>❌ エラーが発生しました:</strong>
+        <div id="error-message"></div>
+      </div>
+    </div>
+    
+    <div id="success-container" style="display: none;">
+      <div class="success-message">
+        <strong>✅ 処理が完了しました!</strong>
+        下記のリンクから結果をダウンロードできます。
+      </div>
+    </div>
+  </section>
+
+  <section class="card" id="downloads-section" style="display: none;">
+    <h2>📁 ダウンロード</h2>
+    <div class="download-grid">
+      <a id="link_txt" class="btn" href="#" target="_blank" rel="noopener noreferrer" aria-label="テキストファイルをダウンロード">
+        📄 TXT
+      </a>
+      <a id="link_srt" class="btn" href="#" target="_blank" rel="noopener noreferrer" aria-label="SRT字幕ファイルをダウンロード">
+        🎬 SRT
+      </a>
+      <a id="link_vtt" class="btn" href="#" target="_blank" rel="noopener noreferrer" aria-label="WebVTT字幕ファイルをダウンロード">
+        🌐 VTT
+      </a>
+      <a id="link_json" class="btn" href="#" target="_blank" rel="noopener noreferrer" aria-label="JSON形式の詳細データをダウンロード">
+        ⚙️ JSON
+      </a>
+    </div>
+    
+    <div id="metadata" class="metadata" style="display: none;">
+      <div class="metadata-item">
+        <div class="metadata-label">検出言語</div>
+        <div class="metadata-value" id="detected-language">-</div>
+      </div>
+      <div class="metadata-item">
+        <div class="metadata-label">信頼度</div>
+        <div class="metadata-value" id="confidence">-</div>
+      </div>
+      <div class="metadata-item">
+        <div class="metadata-label">処理時間</div>
+        <div class="metadata-value" id="duration">-</div>
+      </div>
+      <div class="metadata-item">
+        <div class="metadata-label">ジョブID</div>
+        <div class="metadata-value">{{ job_id }}</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>👁️ プレビュー</h2>
+    <div id="preview" class="preview"></div>
+    
+    <div class="actions">
+      <button id="copy-btn" class="btn copy-btn" style="display: none;" aria-label="プレビューテキストをコピー">
+        📋 テキストをコピー
+        <div class="copy-success">コピーしました!</div>
+      </button>
+      <button id="refresh-btn" class="btn" aria-label="状況を更新">
+        🔄 状況更新
+      </button>
+    </div>
+  </section>
+
+<script>
+const jobId = {{ job_id|tojson }};
+
+// DOM elements
+const elements = {
+  progressBar: document.getElementById('progress-bar'),
+  progressText: document.getElementById('progress-text'),
+  statusBadge: document.getElementById('status-badge'),
+  errorContainer: document.getElementById('error-container'),
+  errorMessage: document.getElementById('error-message'),
+  successContainer: document.getElementById('success-container'),
+  downloadsSection: document.getElementById('downloads-section'),
+  metadata: document.getElementById('metadata'),
+  preview: document.getElementById('preview'),
+  copyBtn: document.getElementById('copy-btn'),
+  refreshBtn: document.getElementById('refresh-btn'),
+  linkTxt: document.getElementById('link_txt'),
+  linkSrt: document.getElementById('link_srt'),
+  linkVtt: document.getElementById('link_vtt'),
+  linkJson: document.getElementById('link_json'),
+  detectedLanguage: document.getElementById('detected-language'),
+  confidence: document.getElementById('confidence'),
+  duration: document.getElementById('duration')
+};
+
+// Utility functions
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text || '';
+  return div.innerHTML;
+}
+
+function formatConfidence(value) {
+  if (value === null || value === undefined) return '-';
+  return (typeof value === 'number' ? (value * 100).toFixed(1) + '%' : value);
+}
+
+function formatDuration(seconds) {
+  if (!seconds || isNaN(seconds)) return '-';
+  return `${Math.round(seconds * 10) / 10}秒`;
+}
+
+function normalizeText(text) {
+  if (!text) return '';
+  // Convert visible \n sequences to actual newlines
+  return text.replace(/\\r\\n/g, '\\n').replace(/\\r/g, '\\n').replace(/\\n/g, '\n');
+}
+
+// Status management
+const statusConfig = {
+  queued: {
+    text: '待機中',
+    icon: '⏳',
+    class: 'queued'
+  },
+  running: {
+    text: '処理中',
+    icon: '⚡',
+    class: 'running'
+  },
+  done: {
+    text: '完了',
+    icon: '✅',
+    class: 'done'
+  },
+  error: {
+    text: 'エラー',
+    icon: '❌',
+    class: 'error'
+  }
+};
+
+function updateStatus(status, progress = 0, error = null) {
+  const config = statusConfig[status] || statusConfig.queued;
+  
+  // Update progress bar
+  const progressPercent = Math.round(progress * 100);
+  elements.progressBar.style.width = `${progressPercent}%`;
+  elements.progressBar.className = `progress-bar ${config.class}`;
+  elements.progressText.textContent = `${progressPercent}%`;
+  
+  // Update status badge
+  elements.statusBadge.className = `status-badge ${config.class}`;
+  
+  if (status === 'running') {
+    elements.statusBadge.innerHTML = `<div class="loading"></div> ${config.text}`;
+  } else {
+    elements.statusBadge.innerHTML = `${config.icon} ${config.text}`;
+  }
+  
+  // Handle error display
+  if (status === 'error' && error) {
+    elements.errorContainer.style.display = 'block';
+    elements.errorMessage.innerHTML = escapeHtml(error);
+    elements.successContainer.style.display = 'none';
+  } else if (status === 'done') {
+    elements.errorContainer.style.display = 'none';
+    elements.successContainer.style.display = 'block';
+  } else {
+    elements.errorContainer.style.display = 'none';
+    elements.successContainer.style.display = 'none';
+  }
+}
+
+function updateDownloads(outputFiles, metadata = {}) {
+  if (!outputFiles) {
+    elements.downloadsSection.style.display = 'none';
+    return;
+  }
+  
+  elements.downloadsSection.style.display = 'block';
+  
+  // Update download links
+  const links = [
+    { element: elements.linkTxt, key: 'txt' },
+    { element: elements.linkSrt, key: 'srt' },
+    { element: elements.linkVtt, key: 'vtt' },
+    { element: elements.linkJson, key: 'json' }
+  ];
+  
+  links.forEach(({ element, key }) => {
+    if (outputFiles[key]) {
+      element.href = outputFiles[key];
+      element.style.display = 'flex';
+    } else {
+      element.style.display = 'none';
+    }
+  });
+  
+  // Update metadata
+  if (metadata.language || metadata.language_probability || metadata.duration) {
+    elements.metadata.style.display = 'grid';
+    elements.detectedLanguage.textContent = metadata.language || '-';
+    elements.confidence.textContent = formatConfidence(metadata.language_probability);
+    elements.duration.textContent = formatDuration(metadata.duration);
+  }
+}
+
+function updatePreview(previewText) {
+  const normalizedText = normalizeText(previewText);
+  elements.preview.textContent = normalizedText;
+  
+  if (normalizedText.trim()) {
+    elements.copyBtn.style.display = 'flex';
+  } else {
+    elements.copyBtn.style.display = 'none';
+  }
+}
+
+// API functions
+async function fetchJobStatus() {
+  try {
+    const response = await fetch(`/api/status/${jobId}`);
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+    }
+    return await response.json();
+  } catch (error) {
+    console.error('Status fetch failed:', error);
+    throw error;
+  }
+}
+
+async function pollJobStatus() {
+  try {
+    const data = await fetchJobStatus();
+    
+    updateStatus(data.status, data.progress, data.error);
+    updatePreview(data.preview);
+    
+    if (data.status === 'done') {
+      updateDownloads(data.output_files, {
+        language: data.language,
+        language_probability: data.language_probability,
+        duration: data.duration
+      });
+      return true; // Stop polling
+    } else if (data.status === 'error') {
+      return true; // Stop polling
+    }
+    
+    return false; // Continue polling
+  } catch (error) {
+    console.error('Polling error:', error);
+    updateStatus('error', 0, 'ステータス取得に失敗しました: ' + error.message);
+    return true; // Stop polling on error
+  }
+}
+
+// Copy functionality
+async function copyToClipboard(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch (error) {
+    // Fallback for older browsers
+    const textArea = document.createElement('textarea');
+    textArea.value = text;
+    textArea.style.position = 'fixed';
+    textArea.style.opacity = '0';
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+    
+    try {
+      const successful = document.execCommand('copy');
+      document.body.removeChild(textArea);
+      return successful;
+    } catch (err) {
+      document.body.removeChild(textArea);
+      return false;
+    }
+  }
+}
+
+// Event listeners
+elements.copyBtn.addEventListener('click', async () => {
+  const text = elements.preview.textContent;
+  if (!text.trim()) return;
+  
+  const success = await copyToClipboard(text);
+  if (success) {
+    const successEl = elements.copyBtn.querySelector('.copy-success');
+    successEl.classList.add('show');
+    setTimeout(() => {
+      successEl.classList.remove('show');
+    }, 2000);
+  } else {
+    alert('コピーに失敗しました');
+  }
+});
+
+elements.refreshBtn.addEventListener('click', async () => {
+  const originalText = elements.refreshBtn.textContent;
+  elements.refreshBtn.innerHTML = '<div class="loading"></div> 更新中...';
+  elements.refreshBtn.disabled = true;
+  
+  await pollJobStatus();
+  
+  setTimeout(() => {
+    elements.refreshBtn.textContent = originalText;
+    elements.refreshBtn.disabled = false;
+  }, 1000);
+});
+
+// Connection status handling
+window.addEventListener('online', () => {
+  console.log('Connection restored');
+});
+
+window.addEventListener('offline', () => {
+  console.log('Connection lost');
+});
+
+// Initialize polling
+let pollInterval;
+
+async function startPolling() {
+  // Initial poll
+  const shouldStop = await pollJobStatus();
+  
+  if (!shouldStop) {
+    // Poll every 2 seconds for active jobs
+    pollInterval = setInterval(async () => {
+      const shouldStop = await pollJobStatus();
+      if (shouldStop && pollInterval) {
+        clearInterval(pollInterval);
+      }
+    }, 2000);
+  }
+}
+
+// Cleanup on page unload
+window.addEventListener('beforeunload', () => {
+  if (pollInterval) {
+    clearInterval(pollInterval);
+  }
+});
+
+// Start when page loads
+document.addEventListener('DOMContentLoaded', () => {
+  startPolling();
+});
+
+// Page visibility API to pause/resume polling
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    if (pollInterval) {
+      clearInterval(pollInterval);
+    }
+  } else {
+    // Resume polling if needed
+    startPolling();
+  }
+});
+</script>
+</body>
+</html>

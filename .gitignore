@@ -1,0 +1,111 @@
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# ===== 仮想環境 =====
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# ===== IDE =====
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ===== アプリケーション固有 =====
+# データファイル（機密情報を含む可能性）
+data/uploads/*
+data/outputs/*
+data/logs/*
+!data/uploads/.keep
+!data/outputs/.keep
+!data/logs/.keep
+
+# バックアップファイル
+backups/*.tar.gz
+backups/*.zip
+
+# ログファイル
+logs/
+*.log
+
+# 一時ファイル
+tmp/
+temp/
+
+# ===== SSL証明書 =====
+nginx/ssl/*.pem
+nginx/ssl/*.crt
+nginx/ssl/*.key
+
+# ===== Docker =====
+.dockerignore
+
+# ===== OS固有 =====
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Linux
+*~
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# ===== 設定ファイル =====
+# 本番環境の設定（機密情報を含む）
+.env.local
+.env.production
+.env.staging
+
+# ===== テスト・カバレッジ =====
+.coverage
+htmlcov/
+.tox/
+.pytest_cache/
+coverage.xml
+*.cover
+.hypothesis/
+
+# ===== セキュリティ =====
+security-report.json
+bandit-report.json
+
+# ===== 監視 =====
+prometheus-data/
+
+# ===== その他 =====
+*.pid
+.sass-cache/
+node_modules/
+npm-debug.log*

@@ -1,0 +1,748 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="ローカル音声・動画文字起こしサービス" />
+  <!-- セキュリティヘッダー -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline';" />
+  <meta http-equiv="X-Content-Type-Options" content="nosniff" />
+  <meta http-equiv="X-Frame-Options" content="DENY" />
+  <meta http-equiv="X-XSS-Protection" content="1; mode=block" />
+  
+  <title>Local Web Transcriber</title>
+  <style>
+    :root {
+      --primary-color: #2563eb;
+      --primary-hover: #1d4ed8;
+      --success-color: #16a34a;
+      --warning-color: #d97706;
+      --error-color: #dc2626;
+      --border-color: #e5e7eb;
+      --text-color: #374151;
+      --text-muted: #6b7280;
+      --bg-card: #ffffff;
+      --bg-hover: #f9fafb;
+      --shadow: 0 1px 3px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.06);
+    }
+    
+    * {
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      line-height: 1.6;
+      color: var(--text-color);
+      background-color: #f8fafc;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    
+    .header {
+      text-align: center;
+      margin-bottom: 40px;
+    }
+    
+    .header h1 {
+      color: var(--primary-color);
+      margin-bottom: 8px;
+      font-weight: 700;
+    }
+    
+    .header p {
+      color: var(--text-muted);
+      margin: 0;
+    }
+    
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 24px;
+      margin-bottom: 24px;
+      box-shadow: var(--shadow);
+    }
+    
+    .card h2 {
+      margin-top: 0;
+      margin-bottom: 20px;
+      color: var(--text-color);
+      font-weight: 600;
+      font-size: 1.25rem;
+    }
+    
+    .form-group {
+      margin-bottom: 20px;
+    }
+    
+    .form-row {
+      display: flex;
+      gap: 20px;
+      flex-wrap: wrap;
+      align-items: end;
+    }
+    
+    .form-field {
+      flex: 1;
+      min-width: 200px;
+    }
+    
+    label {
+      display: block;
+      font-weight: 600;
+      margin-bottom: 8px;
+      color: var(--text-color);
+    }
+    
+    input[type=file], 
+    input[type=text], 
+    select {
+      width: 100%;
+      padding: 12px;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      font-size: 14px;
+      transition: border-color 0.2s;
+    }
+    
+    input[type=file]:focus, 
+    input[type=text]:focus, 
+    select:focus {
+      outline: none;
+      border-color: var(--primary-color);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+    }
+    
+    .btn {
+      display: inline-block;
+      padding: 12px 24px;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      text-decoration: none;
+      color: var(--text-color);
+      background: white;
+      cursor: pointer;
+      transition: all 0.2s;
+      margin-right: 8px;
+      margin-bottom: 8px;
+    }
+    
+    .btn:hover {
+      background: var(--bg-hover);
+      border-color: var(--primary-color);
+    }
+    
+    .btn-primary {
+      background: var(--primary-color);
+      color: white;
+      border-color: var(--primary-color);
+    }
+    
+    .btn-primary:hover {
+      background: var(--primary-hover);
+      border-color: var(--primary-hover);
+    }
+    
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    
+    .badge {
+      display: inline-block;
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      border: 1px solid var(--border-color);
+      background: white;
+    }
+    
+    .badge.success {
+      background: #f0fdf4;
+      border-color: var(--success-color);
+      color: var(--success-color);
+    }
+    
+    .badge.warning {
+      background: #fffbeb;
+      border-color: var(--warning-color);
+      color: var(--warning-color);
+    }
+    
+    .badge.error {
+      background: #fef2f2;
+      border-color: var(--error-color);
+      color: var(--error-color);
+    }
+    
+    .status-info {
+      background: #f0f9ff;
+      border: 1px solid #0ea5e9;
+      border-radius: 8px;
+      padding: 16px;
+      margin: 16px 0;
+    }
+    
+    .status-info p {
+      margin: 0;
+      color: #0c4a6e;
+    }
+    
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 16px;
+    }
+    
+    th, td {
+      text-align: left;
+      padding: 12px 8px;
+      border-bottom: 1px solid var(--border-color);
+    }
+    
+    th {
+      font-weight: 600;
+      color: var(--text-color);
+      background: var(--bg-hover);
+    }
+    
+    tr:hover {
+      background: var(--bg-hover);
+    }
+    
+    .nowrap {
+      white-space: nowrap;
+    }
+    
+    .text-muted {
+      color: var(--text-muted);
+      font-size: 14px;
+    }
+    
+    .loading {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      border: 2px solid var(--border-color);
+      border-radius: 50%;
+      border-top-color: var(--primary-color);
+      animation: spin 1s ease-in-out infinite;
+    }
+    
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    
+    .alert {
+      padding: 12px 16px;
+      border-radius: 8px;
+      margin-bottom: 16px;
+    }
+    
+    .alert.error {
+      background: #fef2f2;
+      border: 1px solid var(--error-color);
+      color: var(--error-color);
+    }
+    
+    .alert.success {
+      background: #f0fdf4;
+      border: 1px solid var(--success-color);
+      color: var(--success-color);
+    }
+    
+    .file-info {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+    
+    @media (max-width: 768px) {
+      .form-row {
+        flex-direction: column;
+      }
+      
+      .form-field {
+        min-width: unset;
+      }
+      
+      body {
+        padding: 16px;
+      }
+      
+      table {
+        font-size: 14px;
+      }
+      
+      th, td {
+        padding: 8px 4px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>🎤 Local Web Transcriber</h1>
+    <p>高精度なローカル音声・動画文字起こしサービス</p>
+  </div>
+
+  <div id="alert-container"></div>
+
+  <section class="card">
+    <h2>🤖 モデル設定</h2>
+    <div class="form-row">
+      <div class="form-field">
+        <label>現在のモデル</label>
+        <div>
+          <span id="cur_model" class="badge">読み込み中...</span>
+          <div id="load_state" class="text-muted"></div>
+        </div>
+      </div>
+      <div class="form-field">
+        <label for="model_sel">モデル選択</label>
+        <select id="model_sel" aria-label="モデル選択">
+          <option value="">読み込み中...</option>
+        </select>
+      </div>
+      <div class="form-field">
+        <label for="compute_sel">演算タイプ</label>
+        <select id="compute_sel" aria-label="演算タイプ選択">
+          <option value="int8">int8 (高速・軽量)</option>
+          <option value="int8_float16">int8_float16</option>
+          <option value="int16">int16</option>
+          <option value="float16">float16 (バランス)</option>
+          <option value="float32">float32 (高精度)</option>
+        </select>
+      </div>
+      <div class="form-field">
+        <button id="btn_switch" class="btn btn-primary">モデル変更</button>
+      </div>
+    </div>
+    
+    <div class="status-info">
+      <p>💡 <strong>推奨設定：</strong> GPUが使用できない環境では <code>base</code> または <code>small</code> モデルを推奨します。<code>large</code> モデルは高精度ですが、大量のメモリを消費します。</p>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>📁 新規文字起こし</h2>
+    <form id="upload-form" action="/upload" method="post" enctype="multipart/form-data">
+      <div class="form-group">
+        <div class="form-row">
+          <div class="form-field">
+            <label for="file">音声・動画ファイル *</label>
+            <input type="file" id="file" name="file" accept="audio/*,video/*,.mp3,.wav,.mp4,.avi,.mov,.m4a,.flac,.ogg,.webm" required aria-describedby="file-help">
+            <div id="file-help" class="file-info">対応形式: MP3, WAV, MP4, AVI, MOV, M4A, FLAC, OGG, WebM (最大500MB)</div>
+          </div>
+          <div class="form-field">
+            <label for="language">言語 (オプション)</label>
+            <input type="text" id="language" name="language" placeholder="ja (空白で自動検出)" maxlength="10" aria-describedby="lang-help">
+            <div id="lang-help" class="file-info">例: ja, en, zh, fr (ISO 639-1コード)</div>
+          </div>
+          <div class="form-field">
+            <label for="task">タスク</label>
+            <select id="task" name="task" aria-label="タスク選択">
+              <option value="transcribe" selected>transcribe (同言語で文字起こし)</option>
+              <option value="translate">translate (英語に翻訳)</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      
+      <div class="form-group">
+        <button type="submit" class="btn btn-primary" id="submit-btn">
+          <span id="submit-text">🚀 文字起こし開始</span>
+          <span id="submit-loading" class="loading" style="display: none;"></span>
+        </button>
+      </div>
+    </form>
+  </section>
+
+  <section class="card">
+    <h2>📋 実行履歴</h2>
+    <p class="text-muted">最新50件の処理履歴を表示します。</p>
+    <div id="logs-container">
+      <div id="logs-loading">
+        <div class="loading"></div> 読み込み中...
+      </div>
+      <table id="logs-table" style="display: none;">
+        <thead>
+          <tr>
+            <th class="nowrap">更新日時</th>
+            <th>ファイル名</th>
+            <th>状態</th>
+            <th class="nowrap">言語</th>
+            <th class="nowrap">モデル</th>
+            <th class="nowrap">時間(秒)</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody id="logs-body"></tbody>
+      </table>
+      <div id="logs-empty" style="display: none;">
+        <p class="text-muted">まだ処理履歴がありません。</p>
+      </div>
+    </div>
+  </section>
+
+<script>
+// Utility functions
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+function showAlert(message, type = 'error') {
+  const container = document.getElementById('alert-container');
+  const alert = document.createElement('div');
+  alert.className = `alert ${type}`;
+  alert.innerHTML = escapeHtml(message);
+  container.appendChild(alert);
+  
+  setTimeout(() => {
+    if (alert.parentNode) {
+      alert.parentNode.removeChild(alert);
+    }
+  }, 5000);
+}
+
+function showSuccess(message) {
+  showAlert(message, 'success');
+}
+
+async function fetchJSON(url, options = {}) {
+  try {
+    const response = await fetch(url, options);
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`HTTP ${response.status}: ${errorText}`);
+    }
+    return await response.json();
+  } catch (error) {
+    console.error('Fetch error:', error);
+    throw error;
+  }
+}
+
+// Model management
+async function loadModelInfo() {
+  try {
+    const data = await fetchJSON('/api/models');
+    
+    // Update model selector
+    const modelSelect = document.getElementById('model_sel');
+    modelSelect.innerHTML = '';
+    
+    (data.available || []).forEach(modelId => {
+      const option = document.createElement('option');
+      option.value = modelId;
+      option.textContent = modelId;
+      if (modelId === data.current?.model_id) {
+        option.selected = true;
+      }
+      modelSelect.appendChild(option);
+    });
+    
+    // Update current model display
+    const currentModel = document.getElementById('cur_model');
+    if (data.current) {
+      currentModel.textContent = `${data.current.model_id} / ${data.current.compute_type}`;
+      currentModel.className = 'badge success';
+    }
+    
+    // Update compute type
+    const computeSelect = document.getElementById('compute_sel');
+    computeSelect.value = data.current?.compute_type || 'int8';
+    
+    // Update loading state
+    const loadState = document.getElementById('load_state');
+    const switchBtn = document.getElementById('btn_switch');
+    
+    if (data.loading?.in_progress) {
+      loadState.innerHTML = `<div class="loading"></div> ${escapeHtml(data.loading.target || 'Unknown')} を読み込み中...`;
+      switchBtn.disabled = true;
+    } else if (data.loading?.error) {
+      loadState.innerHTML = `❌ エラー: ${escapeHtml(data.loading.error)}`;
+      loadState.className = 'text-muted error';
+      switchBtn.disabled = false;
+    } else {
+      loadState.textContent = '';
+      switchBtn.disabled = false;
+    }
+  } catch (error) {
+    console.error('Model info load failed:', error);
+    showAlert('モデル情報の読み込みに失敗しました: ' + error.message);
+  }
+}
+
+// Model switching
+document.getElementById('btn_switch').addEventListener('click', async () => {
+  const modelId = document.getElementById('model_sel').value;
+  const computeType = document.getElementById('compute_sel').value;
+  
+  if (!modelId) {
+    showAlert('モデルを選択してください');
+    return;
+  }
+  
+  const switchBtn = document.getElementById('btn_switch');
+  const originalText = switchBtn.textContent;
+  
+  try {
+    switchBtn.disabled = true;
+    switchBtn.innerHTML = '<div class="loading"></div> 変更中...';
+    
+    await fetchJSON('/api/model', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: modelId, compute_type: computeType })
+    });
+    
+    showSuccess(`モデル ${modelId} への変更を開始しました`);
+    
+    // Poll for completion
+    const pollInterval = setInterval(async () => {
+      try {
+        const status = await fetchJSON('/api/model');
+        if (!status.loading?.in_progress) {
+          clearInterval(pollInterval);
+          await loadModelInfo();
+          if (status.loading?.error) {
+            showAlert('モデル変更に失敗しました: ' + status.loading.error);
+          } else {
+            showSuccess('モデル変更が完了しました');
+          }
+        }
+      } catch (error) {
+        console.error('Polling error:', error);
+      }
+    }, 2000);
+    
+  } catch (error) {
+    showAlert('モデル変更に失敗しました: ' + error.message);
+    switchBtn.disabled = false;
+    switchBtn.textContent = originalText;
+  }
+});
+
+// File upload handling
+document.getElementById('upload-form').addEventListener('submit', function(e) {
+  const fileInput = document.getElementById('file');
+  const submitBtn = document.getElementById('submit-btn');
+  const submitText = document.getElementById('submit-text');
+  const submitLoading = document.getElementById('submit-loading');
+  
+  if (!fileInput.files || fileInput.files.length === 0) {
+    e.preventDefault();
+    showAlert('ファイルを選択してください');
+    return;
+  }
+  
+  const file = fileInput.files[0];
+  
+  // File size validation (500MB = 500 * 1024 * 1024 bytes)
+  if (file.size > 500 * 1024 * 1024) {
+    e.preventDefault();
+    showAlert('ファイルサイズが大きすぎます (最大500MB)');
+    return;
+  }
+  
+  if (file.size < 1024) {
+    e.preventDefault();
+    showAlert('ファイルサイズが小さすぎます');
+    return;
+  }
+  
+  // Show loading state
+  submitBtn.disabled = true;
+  submitText.style.display = 'none';
+  submitLoading.style.display = 'inline-block';
+});
+
+// File input validation
+document.getElementById('file').addEventListener('change', function(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  
+  const allowedTypes = [
+    'audio/mpeg', 'audio/wav', 'audio/mp4', 'audio/x-m4a',
+    'audio/flac', 'audio/ogg', 'audio/webm',
+    'video/mp4', 'video/avi', 'video/quicktime', 'video/webm'
+  ];
+  
+  const allowedExtensions = ['.mp3', '.wav', '.mp4', '.avi', '.mov', '.m4a', '.flac', '.ogg', '.webm'];
+  const fileExtension = file.name.toLowerCase().substring(file.name.lastIndexOf('.'));
+  
+  if (!allowedTypes.includes(file.type) && !allowedExtensions.includes(fileExtension)) {
+    showAlert('対応していないファイル形式です');
+    e.target.value = '';
+    return;
+  }
+  
+  // Show file info
+  const fileSize = (file.size / (1024 * 1024)).toFixed(2);
+  const fileHelp = document.getElementById('file-help');
+  fileHelp.textContent = `選択中: ${file.name} (${fileSize}MB)`;
+});
+
+// Logs management
+async function loadLogs() {
+  const logsContainer = document.getElementById('logs-container');
+  const logsLoading = document.getElementById('logs-loading');
+  const logsTable = document.getElementById('logs-table');
+  const logsEmpty = document.getElementById('logs-empty');
+  const logsBody = document.getElementById('logs-body');
+  
+  try {
+    logsLoading.style.display = 'block';
+    logsTable.style.display = 'none';
+    logsEmpty.style.display = 'none';
+    
+    const logs = await fetchJSON('/api/logs?limit=50');
+    
+    logsLoading.style.display = 'none';
+    
+    if (!logs || logs.length === 0) {
+      logsEmpty.style.display = 'block';
+      return;
+    }
+    
+    logsBody.innerHTML = '';
+    
+    logs.forEach(log => {
+      const row = document.createElement('tr');
+      
+      // Updated date
+      const dateCell = document.createElement('td');
+      dateCell.className = 'nowrap';
+      dateCell.textContent = log.updated_at ? 
+        new Date(log.updated_at).toLocaleString('ja-JP') : '';
+      
+      // Filename
+      const nameCell = document.createElement('td');
+      nameCell.textContent = log.filename || '';
+      nameCell.title = log.filename || '';
+      
+      // Status
+      const statusCell = document.createElement('td');
+      const statusBadge = document.createElement('span');
+      statusBadge.className = 'badge';
+      statusBadge.textContent = log.status || '';
+      
+      switch (log.status) {
+        case 'done':
+          statusBadge.className += ' success';
+          statusBadge.textContent = '完了';
+          break;
+        case 'running':
+          statusBadge.className += ' warning';
+          statusBadge.textContent = '処理中';
+          break;
+        case 'error':
+          statusBadge.className += ' error';
+          statusBadge.textContent = 'エラー';
+          break;
+        case 'queued':
+          statusBadge.textContent = '待機中';
+          break;
+      }
+      statusCell.appendChild(statusBadge);
+      
+      // Language
+      const langCell = document.createElement('td');
+      langCell.className = 'nowrap';
+      langCell.textContent = log.language || '';
+      
+      // Model
+      const modelCell = document.createElement('td');
+      modelCell.className = 'nowrap';
+      const modelText = log.model_id || '';
+      const computeText = log.compute_type ? `/${log.compute_type}` : '';
+      modelCell.textContent = modelText + computeText;
+      
+      // Duration
+      const durationCell = document.createElement('td');
+      durationCell.className = 'nowrap';
+      durationCell.textContent = log.duration ? 
+        Math.round(log.duration * 10) / 10 : '';
+      
+      // Actions
+      const actionsCell = document.createElement('td');
+      
+      // Job link
+      const jobLink = document.createElement('a');
+      jobLink.href = `/job/${log.job_id}`;
+      jobLink.textContent = '詳細';
+      jobLink.className = 'btn';
+      jobLink.setAttribute('aria-label', `${log.filename}の詳細を表示`);
+      actionsCell.appendChild(jobLink);
+      
+      // Download links
+      if (log.output_files) {
+        ['txt', 'srt', 'vtt', 'json'].forEach(format => {
+          if (log.output_files[format]) {
+            const link = document.createElement('a');
+            link.href = log.output_files[format];
+            link.textContent = format.toUpperCase();
+            link.className = 'btn';
+            link.target = '_blank';
+            link.rel = 'noopener noreferrer';
+            link.setAttribute('aria-label', `${format}ファイルをダウンロード`);
+            actionsCell.appendChild(link);
+          }
+        });
+      }
+      
+      row.appendChild(dateCell);
+      row.appendChild(nameCell);
+      row.appendChild(statusCell);
+      row.appendChild(langCell);
+      row.appendChild(modelCell);
+      row.appendChild(durationCell);
+      row.appendChild(actionsCell);
+      
+      logsBody.appendChild(row);
+    });
+    
+    logsTable.style.display = 'table';
+    
+  } catch (error) {
+    console.error('Logs load failed:', error);
+    logsLoading.style.display = 'none';
+    showAlert('履歴の読み込みに失敗しました: ' + error.message);
+  }
+}
+
+// Periodic refresh
+function startPeriodicRefresh() {
+  // Refresh model info every 30 seconds
+  setInterval(loadModelInfo, 30000);
+  
+  // Refresh logs every 60 seconds
+  setInterval(loadLogs, 60000);
+}
+
+// Initialize
+document.addEventListener('DOMContentLoaded', async () => {
+  await loadModelInfo();
+  await loadLogs();
+  startPeriodicRefresh();
+});
+
+// Handle connection errors
+window.addEventListener('online', () => {
+  showSuccess('接続が復旧しました');
+});
+
+window.addEventListener('offline', () => {
+  showAlert('接続が切断されました', 'warning');
+});
+</script>
+</body>
+</html>

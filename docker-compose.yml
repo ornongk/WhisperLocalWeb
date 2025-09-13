@@ -1,0 +1,164 @@
+version: '3.8'
+
+services:
+  transcriber:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    container_name: local-web-transcriber
+    restart: unless-stopped
+    
+    # ポート設定
+    ports:
+      - "${HOST_PORT:-7860}:7860"
+    
+    # 環境変数
+    environment:
+      - MODEL_ID=${MODEL_ID:-base}
+      - DEFAULT_LANGUAGE=${DEFAULT_LANGUAGE:-ja}
+      - DEFAULT_TASK=${DEFAULT_TASK:-transcribe}
+      - MAX_WORKERS=${MAX_WORKERS:-2}
+      - COMPUTE_TYPE=${COMPUTE_TYPE:-int8}
+      # セキュリティ設定
+      - PYTHONUNBUFFERED=1
+      - PYTHONHASHSEED=random
+      - TZ=${TIMEZONE:-Asia/Tokyo}
+    
+    # ボリュームマウント
+    volumes:
+      - ./data:/data:rw
+      - /tmp:/tmp:rw  # 一時ファイル用
+    
+    # リソース制限
+    deploy:
+      resources:
+        limits:
+          memory: ${MEMORY_LIMIT:-4G}
+          cpus: ${CPU_LIMIT:-2.0}
+        reservations:
+          memory: ${MEMORY_RESERVATION:-1G}
+          cpus: ${CPU_RESERVATION:-0.5}
+    
+    # セキュリティ設定
+    security_opt:
+      - no-new-privileges:true
+    user: "1000:1000"
+    read_only: false  # アプリが書き込み可能なディレクトリを必要とするため
+    
+    # ネットワーク設定
+    networks:
+      - transcriber-network
+    
+    # ヘルスチェック
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7860/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    
+    # ログ設定
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    
+    # 依存関係
+    depends_on:
+      - nginx
+
+  # リバースプロキシ（本番環境用）
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: transcriber-nginx
+    restart: unless-stopped
+    
+    ports:
+      - "${NGINX_PORT:-80}:80"
+      - "${NGINX_SSL_PORT:-443}:443"
+    
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro  # SSL証明書用
+      - ./logs/nginx:/var/log/nginx:rw
+    
+    networks:
+      - transcriber-network
+    
+    # セキュリティ設定
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /var/cache/nginx:rw,noexec,nosuid,size=100m
+      - /var/run:rw,noexec,nosuid,size=100m
+    
+    # ヘルスチェック
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    
+    # ログ設定
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # 監視用（オプション）
+  prometheus:
+    image: prom/prometheus:v2.47.0
+    container_name: transcriber-prometheus
+    restart: unless-stopped
+    
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=15d'
+      - '--web.enable-lifecycle'
+    
+    networks:
+      - transcriber-network
+    
+    profiles:
+      - monitoring
+
+  # ログ集約用（オプション）
+  fluentd:
+    image: fluent/fluentd:v1.16-debian-1
+    container_name: transcriber-fluentd
+    restart: unless-stopped
+    
+    volumes:
+      - ./logging/fluent.conf:/fluentd/etc/fluent.conf:ro
+      - ./logs:/fluentd/log:rw
+    
+    networks:
+      - transcriber-network
+    
+    profiles:
+      - logging
+
+networks:
+  transcriber-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+volumes:
+  prometheus-data:
+    driver: local
