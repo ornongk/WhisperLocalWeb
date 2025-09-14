@@ -9,19 +9,43 @@ help: ## ヘルプを表示
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
 # ===== 環境設定 =====
-setup: ## 初期環境セットアップ
+setup: ## 初期環境セットアップ（日本語最適化）
 	@echo "🚀 初期環境をセットアップ中..."
 	@if [ ! -f .env ]; then \
-		echo "MODEL_ID=base" > .env; \
-		echo "DEFAULT_LANGUAGE=ja" >> .env; \
-		echo "DEFAULT_TASK=transcribe" >> .env; \
-		echo "MAX_WORKERS=2" >> .env; \
-		echo "COMPUTE_TYPE=int8" >> .env; \
-		echo "✅ .envファイルを作成しました"; \
+		if [ -f .env.template ]; then \
+			cp .env.template .env; \
+			echo "✅ .env.templateから.envファイルを作成しました"; \
+			echo "📝 必要に応じて.envファイルを編集してください"; \
+		else \
+			echo "MODEL_ID=base" > .env; \
+			echo "DEFAULT_LANGUAGE=ja" >> .env; \
+			echo "DEFAULT_TASK=transcribe" >> .env; \
+			echo "MAX_WORKERS=2" >> .env; \
+			echo "COMPUTE_TYPE=int8" >> .env; \
+			echo "✅ 基本的な.envファイルを作成しました"; \
+		fi \
+	else \
+		echo "⚠️  .envファイルは既に存在します"; \
 	fi
 	@mkdir -p data/uploads data/outputs data/logs logs/nginx
 	@chmod 755 data logs 2>/dev/null || true
 	@echo "✅ ディレクトリ構造を作成しました"
+	@echo ""
+	@echo "🎯 次のステップ:"
+	@echo "   1. .envファイルの設定確認: cat .env"
+	@echo "   2. 必要に応じて設定編集: nano .env"
+	@echo "   3. アプリケーション起動: make build && make run"
+
+setup-dev: ## 開発環境用セットアップ
+	@echo "🔧 開発環境をセットアップ中..."
+	@make setup
+	@if [ -f .env.template ]; then \
+		echo "# 開発環境設定" >> .env; \
+		echo "DEBUG_MODE=true" >> .env; \
+		echo "RELOAD=true" >> .env; \
+		echo "LOG_LEVEL=DEBUG" >> .env; \
+		echo "✅ 開発環境設定を追加しました"; \
+	fi
 
 # ===== Docker操作 =====
 build: ## Dockerイメージをビルド
