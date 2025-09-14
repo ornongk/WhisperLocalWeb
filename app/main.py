@@ -175,7 +175,7 @@ def update_job_status(job_id: str, status: str, **kwargs) -> None:
 app = FastAPI(title="Local Web Transcriber", description="ローカル音声・動画文字起こしサービス")
 
 # Templates - 修正されたパス
-templates = Jinja2Templates(directory="templates")
+templates = Jinja2Templates(directory="/app/app/templates")
 
 # Load jobs on startup
 load_jobs()
