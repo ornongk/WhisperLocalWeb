@@ -1,60 +1,33 @@
-# 修正版 docker-compose.yml
-# version属性を削除（Docker Compose v2では不要）
+# 動作確認済み最小限構成
 
 services:
   transcriber:
-    build: 
-      context: .
-      dockerfile: Dockerfile
+    build: .
     container_name: local-web-transcriber
     restart: unless-stopped
     
-    # ポート設定
     ports:
-      - "${HOST_PORT:-7860}:7860"
+      - "7860:7860"
     
-    # 環境変数
     environment:
-      - MODEL_ID=${MODEL_ID:-base}
-      - DEFAULT_LANGUAGE=${DEFAULT_LANGUAGE:-ja}
-      - DEFAULT_TASK=${DEFAULT_TASK:-transcribe}
-      - MAX_WORKERS=${MAX_WORKERS:-2}
-      - COMPUTE_TYPE=${COMPUTE_TYPE:-int8}
+      - MODEL_ID=base
+      - DEFAULT_LANGUAGE=ja
+      - DEFAULT_TASK=transcribe
+      - MAX_WORKERS=2
+      - COMPUTE_TYPE=int8
       - PYTHONUNBUFFERED=1
       - PYTHONHASHSEED=random
-      - TZ=${TIMEZONE:-Asia/Tokyo}
     
-    # ボリュームマウント
     volumes:
       - ./data:/data:rw
-      - /tmp:/tmp:rw
     
-    # リソース制限
-    deploy:
-      resources:
-        limits:
-          memory: ${MEMORY_LIMIT:-4G}
-          cpus: ${CPU_LIMIT:-2.0}
-        reservations:
-          memory: ${MEMORY_RESERVATION:-1G}
-          cpus: ${CPU_RESERVATION:-0.5}
-    
-    # セキュリティ設定
-    security_opt:
-      - no-new-privileges:true
-    user: "1000:1000"
-    
-    # ネットワーク設定
-    networks:
-      - transcriber-network
-    
-    # ヘルスチェック
+    # 基本的なヘルスチェック
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:7860/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s
+      start_period: 60s
     
     # ログ設定
     logging:
@@ -62,62 +35,7 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-
-  # Nginxコンテナ（オプション - 本番環境用）
-  nginx:
-    image: nginx:1.25-alpine
-    container_name: transcriber-nginx
-    restart: unless-stopped
-    
-    ports:
-      - "${NGINX_PORT:-80}:80"
-      - "${NGINX_SSL_PORT:-443}:443"
-    
-    # Nginx設定ファイルが存在する場合のみマウント
-    volumes:
-      # 基本設定のみ（カスタム設定ファイルは条件付き）
-      - ./logs/nginx:/var/log/nginx:rw
-      # 設定ファイルが存在する場合のみ以下を有効化
-      # - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
-      # - ./nginx/ssl:/etc/nginx/ssl:ro
-    
-    networks:
-      - transcriber-network
-    
-    # メインアプリケーションが起動してから開始
-    depends_on:
-      transcriber:
-        condition: service_healthy
-    
-    # セキュリティ設定
-    security_opt:
-      - no-new-privileges:true
-    read_only: true
-    tmpfs:
-      - /var/cache/nginx:rw,noexec,nosuid,size=100m
-      - /var/run:rw,noexec,nosuid,size=100m
-    
-    # ヘルスチェック
-    healthcheck:
-      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost/ || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-    
-    # ログ設定
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
-    
-    # デフォルトで無効（必要時にプロファイルで有効化）
-    profiles:
-      - nginx
 
 networks:
-  transcriber-network:
+  default:
     driver: bridge
-    ipam:
-      config:
-        - subnet: 172.20.0.0/16
