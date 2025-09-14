@@ -49,7 +49,7 @@
 ### **必要な環境**
 - Docker & Docker Compose
 - 4GB以上のメモリ（推奨：8GB以上）
-- 日本語が表示できるブラウザ
+- 一般的なブラウザ（Edge,Chromeなど）
 
 ### **1. プロジェクトの取得**
 ```bash
@@ -59,14 +59,38 @@ cd local-web-transcriber-improved
 
 ### **2. 日本語環境設定**
 ```bash
-# 自動セットアップ
+# 基本環境セットアップ（ディレクトリ作成 + .env作成）
 make setup
 
-# 設定確認
-cat .env
-# MODEL_ID=base
-# DEFAULT_LANGUAGE=ja  ← 日本語がデフォルト
-# DEFAULT_TASK=transcribe
+# ※ 上記で.env.templateから.envが自動作成されます
+
+# 日本語環境に最適化された設定を確認
+cat .env | head -10
+```
+
+**📋 作成される.envファイルの主要設定:**
+```bash
+# === 日本語特化設定 ===
+MODEL_ID=base                    # 日本語認識に最適
+DEFAULT_LANGUAGE=ja              # ← 日本語がデフォルト
+DEFAULT_TASK=transcribe          # 文字起こしモード
+COMPUTE_TYPE=int8                # 高速処理
+
+# === リソース設定 ===
+MEMORY_LIMIT=4G                  # メモリ制限
+MAX_WORKERS=2                    # 並列処理数
+TIMEZONE=Asia/Tokyo              # 日本のタイムゾーン
+```
+
+**🔧 カスタマイズが必要な場合:**
+```bash
+# 設定ファイルを編集
+nano .env
+
+# 変更例：
+# - より高精度にしたい → MODEL_ID=large-v3
+# - メモリが少ない → MEMORY_LIMIT=2G
+# - 高速処理重視 → MODEL_ID=tiny
 ```
 
 ### **3. アプリケーション起動**
@@ -75,11 +99,32 @@ cat .env
 make build
 make run
 
-# アクセス
+# 起動確認
+make health-check
+
+# 日本語ページにアクセス
 open http://localhost:7860
 ```
 
-**🎉 簡単でしょ！**
+**🎉 簡単でしょ**
+
+### **4. 初回起動後の確認事項**
+```bash
+# システム状態確認
+make status
+
+# ログ確認（問題がないか）
+make logs-app | head -20
+
+# モデル読み込み状況確認
+curl http://localhost:7860/api/models
+```
+
+**✅ 正常起動の確認ポイント:**
+- ブラウザで http://localhost:7860 にアクセス
+- 「🤖 モデル設定」で現在のモデルが「base / int8」と表示される
+- 「📁 新規文字起こし」でファイル選択ができる
+- コンソールでエラーが出ていない
 
 ## 🎯 **使い方**
 
