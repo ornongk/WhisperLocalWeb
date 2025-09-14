@@ -1,4 +1,4 @@
-# 動作確認済み最小限構成
+# 環境変数完全対応版 docker-compose.yml
 
 services:
   transcriber:
@@ -7,19 +7,50 @@ services:
     restart: unless-stopped
     
     ports:
-      - "7860:7860"
+      - "${HOST_PORT:-7860}:7860"
     
+    # 環境変数を.envファイルから読み込み
     environment:
-      - MODEL_ID=base
-      - DEFAULT_LANGUAGE=ja
-      - DEFAULT_TASK=transcribe
-      - MAX_WORKERS=2
-      - COMPUTE_TYPE=int8
+      # === 基本設定（変更可能） ===
+      - MODEL_ID=${MODEL_ID:-base}
+      - DEFAULT_LANGUAGE=${DEFAULT_LANGUAGE:-ja}
+      - DEFAULT_TASK=${DEFAULT_TASK:-transcribe}
+      - MAX_WORKERS=${MAX_WORKERS:-2}
+      - COMPUTE_TYPE=${COMPUTE_TYPE:-int8}
+      
+      # === システム設定（変更可能） ===
       - PYTHONUNBUFFERED=1
       - PYTHONHASHSEED=random
+      - TZ=${TIMEZONE:-Asia/Tokyo}
+      
+      # === ファイル設定（変更可能） ===
+      - MAX_FILE_SIZE=${MAX_FILE_SIZE:-524288000}
+      - FILE_RETENTION_HOURS=${FILE_RETENTION_HOURS:-24}
+      
+      # === パフォーマンス設定（変更可能） ===
+      - MAX_CONCURRENT_UPLOADS=${MAX_CONCURRENT_UPLOADS:-5}
+      - BACKGROUND_WORKERS=${BACKGROUND_WORKERS:-2}
+      
+      # === ログ設定（変更可能） ===
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - LOG_FORMAT=${LOG_FORMAT:-json}
+      
+      # === 開発設定（変更可能） ===
+      - DEBUG_MODE=${DEBUG_MODE:-false}
+      - RELOAD=${RELOAD:-false}
     
     volumes:
       - ./data:/data:rw
+    
+    # リソース制限（.envから読み込み）
+    deploy:
+      resources:
+        limits:
+          memory: ${MEMORY_LIMIT:-4G}
+          cpus: ${CPU_LIMIT:-2.0}
+        reservations:
+          memory: ${MEMORY_RESERVATION:-1G}
+          cpus: ${CPU_RESERVATION:-0.5}
     
     # 基本的なヘルスチェック
     healthcheck:
