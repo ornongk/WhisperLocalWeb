@@ -174,7 +174,7 @@ def update_job_status(job_id: str, status: str, **kwargs) -> None:
 # ====== FastAPI App ======
 app = FastAPI(title="Local Web Transcriber", description="ローカル音声・動画文字起こしサービス")
 
-# Templates
+# Templates - 修正されたパス
 templates = Jinja2Templates(directory="templates")
 
 # Load jobs on startup
@@ -191,6 +191,17 @@ async def index(request: Request):
 async def settings_page(request: Request):
     """Settings page."""
     return templates.TemplateResponse("settings.html", {"request": request})
+
+# ====== 修正: ヘルスチェックエンドポイント追加 ======
+@app.get("/health")
+async def health_check():
+    """Health check endpoint."""
+    return {
+        "status": "healthy", 
+        "message": "WhisperLocal Web is running",
+        "timestamp": time.time(),
+        "model_loaded": current_model is not None
+    }
 
 @app.get("/api/config")
 async def get_config():
