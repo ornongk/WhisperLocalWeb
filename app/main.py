@@ -7,16 +7,18 @@ import subprocess
 import threading
 import logging
 import secrets
+import tempfile
 from typing import Optional, Literal, Dict, Any, List, Tuple
 from concurrent.futures import ThreadPoolExecutor
 
 import aiofiles
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request, Depends
-from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.security import HTTPBearer
 from faster_whisper import WhisperModel
+from pydantic import BaseModel
 
 # ====== Constants ======
 ALLOWED_EXTENSIONS = {'.mp3', '.wav', '.mp4', '.avi', '.mov', '.m4a', '.flac', '.ogg', '.webm'}
@@ -47,18 +49,41 @@ for d in (UPLOAD_DIR, OUTPUT_DIR, LOGS_DIR):
     d.mkdir(parents=True, exist_ok=True)
     d.chmod(0o755)
 
+# ====== Data Models ======
+class ConfigModel(BaseModel):
+    model_id: str
+    compute_type: str
+    default_language: str
+    default_task: str
+    max_workers: int
+
+class TranscriptionRequest(BaseModel):
+    language: Optional[str] = ""
+    task: str = "transcribe"
+    model: Optional[str] = ""
+
+# ====== Configuration Management ======
 def load_config() -> Dict[str, Any]:
     """Load configuration with error handling."""
     if CONFIG_FILE.exists():
         try:
             with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
-                return json.load(f)
+                config = json.load(f)
+                # 設定の検証とデフォルト値の補完
+                for key, default_value in DEFAULTS.items():
+                    if key.lower() not in config:
+                        config[key.lower()] = default_value
+                return config
         except (json.JSONDecodeError, IOError) as e:
             logger.error(f"Failed to load config: {e}")
     
+    # デフォルト設定で新規作成
     cfg = {
         "model_id": DEFAULTS["MODEL_ID"], 
-        "compute_type": DEFAULTS["COMPUTE_TYPE"]
+        "compute_type": DEFAULTS["COMPUTE_TYPE"],
+        "default_language": DEFAULTS["DEFAULT_LANGUAGE"],
+        "default_task": DEFAULTS["DEFAULT_TASK"],
+        "max_workers": DEFAULTS["MAX_WORKERS"]
     }
     save_config(cfg)
     return cfg
@@ -68,691 +93,390 @@ def save_config(cfg: Dict[str, Any]) -> None:
     try:
         temp_file = CONFIG_FILE.with_suffix('.tmp')
         with open(temp_file, 'w', encoding='utf-8') as f:
-            json.dump(cfg, f, ensure_ascii=False, indent=2)
+            json.dump(cfg, f, indent=2, ensure_ascii=False)
         temp_file.replace(CONFIG_FILE)
-        logger.info("Configuration saved successfully")
+        logger.info(f"Configuration saved: {cfg}")
     except IOError as e:
         logger.error(f"Failed to save config: {e}")
-        raise
+        raise HTTPException(status_code=500, detail="設定の保存に失敗しました")
 
-config = load_config()
+# Global configuration
+current_config = load_config()
+current_model = None
+model_lock = threading.Lock()
 
-AVAILABLE_MODELS = [
-    "tiny", "base", "small", "medium", 
-    "large-v1", "large-v2", "large-v3", "distil-large-v3"
-]
-
-# ====== App setup ======
-app = FastAPI(
-    title="Local Web Transcriber (Model Switch + Logs)", 
-    version="0.4.2",
-    description="Secure local web transcriber with model switching capabilities"
-)
-
-STATIC_DIR = pathlib.Path(__file__).parent / "static"
-STATIC_DIR.mkdir(parents=True, exist_ok=True)
-app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
-templates = Jinja2Templates(directory=str(pathlib.Path(__file__).parent / "templates"))
-
-# ====== Security ======
-def validate_filename(filename: str) -> bool:
-    """Validate filename for security."""
-    if not filename or len(filename) > 255:
-        return False
+def get_whisper_model(model_id: str = None, compute_type: str = None) -> WhisperModel:
+    """Get or reload Whisper model with thread safety."""
+    global current_model, current_config
     
-    # Check for path traversal attempts
-    if '..' in filename or '/' in filename or '\\' in filename:
-        return False
+    # 引数が指定されていない場合は現在の設定を使用
+    if model_id is None:
+        model_id = current_config.get("model_id", DEFAULTS["MODEL_ID"])
+    if compute_type is None:
+        compute_type = current_config.get("compute_type", DEFAULTS["COMPUTE_TYPE"])
     
-    # Check extension
-    ext = pathlib.Path(filename).suffix.lower()
-    return ext in ALLOWED_EXTENSIONS
-
-def sanitize_filename(filename: str) -> str:
-    """Sanitize filename for safe storage."""
-    # Remove potentially dangerous characters
-    safe_chars = set('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-')
-    sanitized = ''.join(c if c in safe_chars else '_' for c in filename)
-    return sanitized[:200]  # Limit length
-
-async def validate_file(file: UploadFile) -> Tuple[bool, str]:
-    """Validate uploaded file."""
-    if not file.filename:
-        return False, "No filename provided"
-    
-    if not validate_filename(file.filename):
-        return False, "Invalid filename or extension"
-    
-    # Check file size (approximate)
-    content = await file.read()
-    file_size = len(content)
-    
-    if file_size < MIN_FILE_SIZE:
-        return False, "File too small"
-    if file_size > MAX_FILE_SIZE:
-        return False, "File too large (max 500MB)"
-    
-    # Reset file pointer
-    await file.seek(0)
-    
-    return True, "Valid"
-
-# ====== Model cache & switching ======
-_model_cache: Dict[str, Any] = {"id": None, "compute_type": None, "model": None}
-_loading: Dict[str, Any] = {"in_progress": False, "target": None, "error": None}
-_switch_lock = threading.Lock()
-
-def get_model() -> WhisperModel:
-    """Get current model with thread-safe caching."""
-    current_id = config["model_id"]
-    current_compute = config["compute_type"]
-    
-    if (_model_cache["model"] is None or 
-        _model_cache["id"] != current_id or 
-        _model_cache["compute_type"] != current_compute):
-        
-        logger.info(f"Loading model: {current_id} with compute type: {current_compute}")
-        try:
-            model = WhisperModel(current_id, device="auto", compute_type=current_compute)
-            _model_cache.update({
-                "model": model,
-                "id": current_id,
-                "compute_type": current_compute
-            })
-            logger.info("Model loaded successfully")
-        except Exception as e:
-            logger.error(f"Failed to load model: {e}")
-            raise
-    
-    return _model_cache["model"]
-
-def _do_switch(target_id: str, compute_type: str) -> None:
-    """Switch model in background thread."""
-    global _model_cache
-    try:
-        logger.info(f"Switching to model: {target_id}")
-        model = WhisperModel(target_id, device="auto", compute_type=compute_type)
-        
-        with _switch_lock:
-            _model_cache = {
-                "id": target_id, 
-                "compute_type": compute_type, 
-                "model": model
-            }
-            config["model_id"] = target_id
-            config["compute_type"] = compute_type
-            save_config(config)
-        
-        _loading.update({"in_progress": False, "target": None, "error": None})
-        logger.info(f"Successfully switched to model: {target_id}")
-        
-    except Exception as e:
-        error_msg = f"Model switch failed: {str(e)}"
-        logger.error(error_msg)
-        _loading.update({"in_progress": False, "error": error_msg})
-
-def queue_switch(target_id: str, compute_type: Optional[str] = None) -> None:
-    """Queue model switch with validation."""
-    if _loading["in_progress"]:
-        raise HTTPException(status_code=409, detail="Model switch already in progress")
-    
-    if target_id not in AVAILABLE_MODELS:
-        raise HTTPException(status_code=400, detail="Invalid model ID")
-    
-    compute_type = compute_type or config.get("compute_type", DEFAULTS["COMPUTE_TYPE"])
-    valid_compute_types = ["int8", "int8_float16", "int16", "float16", "float32"]
-    if compute_type not in valid_compute_types:
-        raise HTTPException(status_code=400, detail="Invalid compute type")
-    
-    _loading.update({"in_progress": True, "target": target_id, "error": None})
-    thread = threading.Thread(target=_do_switch, args=(target_id, compute_type), daemon=True)
-    thread.start()
-
-# ====== Logs helpers ======
-def load_logs() -> Dict[str, Dict[str, Any]]:
-    """Load logs with error handling."""
-    if not LOGS_FILE.exists():
-        return {}
-    
-    try:
-        with open(LOGS_FILE, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    except (json.JSONDecodeError, IOError) as e:
-        logger.error(f"Failed to load logs: {e}")
-        return {}
-
-def save_logs(logs_data: Dict[str, Dict[str, Any]]) -> None:
-    """Save logs with atomic write."""
-    try:
-        temp_file = LOGS_FILE.with_suffix('.tmp')
-        with open(temp_file, 'w', encoding='utf-8') as f:
-            json.dump(logs_data, f, ensure_ascii=False, indent=2)
-        temp_file.replace(LOGS_FILE)
-    except IOError as e:
-        logger.error(f"Failed to save logs: {e}")
-
-def upsert_log(job_id: str, data: Dict[str, Any]) -> None:
-    """Update or insert log entry."""
-    logs = load_logs()
-    timestamp = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime())
-    
-    base_entry = logs.get(job_id, {
-        "job_id": job_id, 
-        "created_at": timestamp
-    })
-    base_entry.update(data)
-    base_entry["updated_at"] = timestamp
-    
-    logs[job_id] = base_entry
-    save_logs(logs)
-
-# ====== Text processing ======
-def normalize_newlines(text: str) -> str:
-    """Normalize newline characters."""
-    if not text:
-        return ""
-    # Convert CRLF/CR to LF, convert literal backslash-n to LF
-    text = text.replace("\r\n", "\n").replace("\r", "\n")
-    text = text.replace("\\n", "\n")
-    return text
-
-def srt_caption_text(text: str) -> str:
-    """Format text for SRT captions."""
-    normalized = normalize_newlines(text)
-    # For SRT, collapse to single line to avoid formatting issues
-    return " ".join(line.strip() for line in normalized.splitlines() if line.strip())
-
-def format_timestamp_srt(seconds: float) -> str:
-    """Format timestamp for SRT format."""
-    milliseconds = int((seconds - int(seconds)) * 1000)
-    total_seconds = int(seconds)
-    hours = total_seconds // 3600
-    minutes = (total_seconds % 3600) // 60
-    secs = total_seconds % 60
-    return f"{hours:02d}:{minutes:02d}:{secs:02d},{milliseconds:03d}"
-
-def format_timestamp_vtt(seconds: float) -> str:
-    """Format timestamp for WebVTT format."""
-    milliseconds = int((seconds - int(seconds)) * 1000)
-    total_seconds = int(seconds)
-    hours = total_seconds // 3600
-    minutes = (total_seconds % 3600) // 60
-    secs = total_seconds % 60
-    return f"{hours:02d}:{minutes:02d}:{secs:02d}.{milliseconds:03d}"
-
-def segments_to_srt(segments: List[Dict[str, Any]]) -> str:
-    """Convert segments to SRT format."""
-    lines = []
-    for i, segment in enumerate(segments, start=1):
-        lines.extend([
-            str(i),
-            f"{format_timestamp_srt(segment['start'])} --> {format_timestamp_srt(segment['end'])}",
-            srt_caption_text(segment['text']),
-            ""
-        ])
-    return "\n".join(lines)
-
-def segments_to_vtt(segments: List[Dict[str, Any]]) -> str:
-    """Convert segments to WebVTT format."""
-    lines = ["WEBVTT", ""]
-    for segment in segments:
-        lines.extend([
-            f"{format_timestamp_vtt(segment['start'])} --> {format_timestamp_vtt(segment['end'])}",
-            normalize_newlines(segment["text"]).strip(),
-            ""
-        ])
-    return "\n".join(lines)
-
-def segments_to_text(segments: List[Dict[str, Any]]) -> str:
-    """Convert segments to plain text."""
-    return "\n".join(normalize_newlines(segment["text"]).strip() 
-                    for segment in segments if segment.get("text"))
-
-# ====== File operations ======
-def get_audio_duration(file_path: pathlib.Path) -> float:
-    """Get audio/video duration using ffprobe."""
-    try:
-        result = subprocess.run([
-            "ffprobe", "-v", "error", "-show_entries", "format=duration",
-            "-of", "default=nw=1:nk=1", str(file_path)
-        ], capture_output=True, text=True, check=True, timeout=30)
-        return float(result.stdout.strip())
-    except (subprocess.SubprocessError, ValueError, TypeError) as e:
-        logger.warning(f"Could not determine duration for {file_path}: {e}")
-        return 0.0
-
-def cleanup_old_files(max_age_hours: int = 24) -> None:
-    """Clean up old uploaded files."""
-    cutoff_time = time.time() - (max_age_hours * 3600)
-    
-    for directory in [UPLOAD_DIR, OUTPUT_DIR]:
-        try:
-            for file_path in directory.iterdir():
-                if file_path.is_file() and file_path.stat().st_mtime < cutoff_time:
-                    file_path.unlink()
-                    logger.info(f"Cleaned up old file: {file_path}")
-        except OSError as e:
-            logger.error(f"Error during cleanup of {directory}: {e}")
-
-# ====== Job processing ======
-JOBS: Dict[str, Dict[str, Any]] = {}
-EXECUTOR = ThreadPoolExecutor(max_workers=DEFAULTS["MAX_WORKERS"])
-
-def transcribe_job(job_id: str, source_path: pathlib.Path, language: Optional[str], task: str) -> None:
-    """Main transcription job function."""
-    job_state = JOBS[job_id]
-    job_state.update({
-        "status": "running", 
-        "progress": 0.0, 
-        "segments": [], 
-        "error": None
-    })
-    upsert_log(job_id, {"status": "running"})
-    
-    try:
-        # Get file duration
-        duration = get_audio_duration(source_path)
-        job_state["duration"] = duration
-        logger.info(f"Processing file {source_path} (duration: {duration}s)")
-        
-        # Get model and transcribe
-        model = get_model()
-        segments_iter, info = model.transcribe(
-            str(source_path),
-            language=language or DEFAULTS["DEFAULT_LANGUAGE"],
-            task=task,
-            vad_filter=True,  # Enable VAD for better segmentation
-            beam_size=5,
-            best_of=5,
-            temperature=0.0,
-            condition_on_previous_text=False  # Reduce hallucinations
-        )
-        
-        # Process segments
-        all_segments = []
-        last_end_time = 0.0
-        
-        for segment in segments_iter:
-            segment_data = {
-                "start": float(segment.start),
-                "end": float(segment.end),
-                "text": segment.text
-            }
-            all_segments.append(segment_data)
-            last_end_time = segment_data["end"]
+    with model_lock:
+        # モデルの再読み込みが必要かチェック
+        if (current_model is None or 
+            getattr(current_model, '_model_id', None) != model_id or
+            getattr(current_model, '_compute_type', None) != compute_type):
             
-            # Update progress
-            if duration > 0:
-                progress = min(last_end_time / duration, 0.99)
-                job_state["progress"] = progress
-                
-            # Keep only recent segments in memory
-            job_state["segments"] = all_segments[-50:]
-        
-        # Generate output files
-        plain_text = segments_to_text(all_segments)
-        srt_content = segments_to_srt(all_segments)
-        vtt_content = segments_to_vtt(all_segments)
-        
-        # Write output files
-        output_files = {}
-        for ext, content in [("txt", plain_text), ("srt", srt_content), ("vtt", vtt_content)]:
-            output_path = OUTPUT_DIR / f"{job_id}.{ext}"
-            output_path.write_text(content, encoding="utf-8")
-            output_files[ext] = f"/api/download/{job_id}.{ext}"
-        
-        # Write metadata
-        metadata = {
-            "language": info.language,
-            "language_probability": getattr(info, "language_probability", None),
-            "duration": duration,
-            "model_id": config["model_id"],
-            "compute_type": config["compute_type"],
-            "task": task
-        }
-        
-        json_data = {
-            "meta": metadata,
-            "segments": all_segments
-        }
-        json_path = OUTPUT_DIR / f"{job_id}.json"
-        json_path.write_text(
-            json.dumps(json_data, ensure_ascii=False, indent=2), 
-            encoding="utf-8"
-        )
-        output_files["json"] = f"/api/download/{job_id}.json"
-        
-        # Update job state
-        job_state.update({
-            "status": "done",
-            "progress": 1.0,
-            "output_files": output_files,
-            "preview": plain_text[:2000],
-            "language": metadata["language"],
-            "language_probability": metadata["language_probability"]
-        })
-        
-        # Log completion
-        upsert_log(job_id, {
-            "status": "done",
-            "filename": job_state.get("filename"),
-            "duration": duration,
-            "language": metadata["language"],
-            "output_files": output_files,
-            "task": task,
-            "model_id": metadata["model_id"],
-            "compute_type": metadata["compute_type"]
-        })
-        
-        logger.info(f"Job {job_id} completed successfully")
-        
-    except Exception as e:
-        error_msg = str(e)
-        logger.error(f"Job {job_id} failed: {error_msg}")
-        job_state.update({"status": "error", "error": error_msg})
-        upsert_log(job_id, {"status": "error", "error": error_msg})
+            logger.info(f"Loading Whisper model: {model_id} with {compute_type}")
+            try:
+                current_model = WhisperModel(model_id, compute_type=compute_type)
+                # モデル情報を保存（デバッグ用）
+                current_model._model_id = model_id
+                current_model._compute_type = compute_type
+                logger.info(f"Model loaded successfully: {model_id}")
+            except Exception as e:
+                logger.error(f"Failed to load model {model_id}: {e}")
+                raise HTTPException(status_code=500, detail=f"モデル読み込みエラー: {e}")
     
-    finally:
-        # Clean up uploaded file
-        try:
-            if source_path.exists():
-                source_path.unlink()
-                logger.info(f"Cleaned up uploaded file: {source_path}")
-        except OSError as e:
-            logger.error(f"Failed to clean up {source_path}: {e}")
+    return current_model
 
-# ====== Routes ======
+# ====== Job Management ======
+jobs_data = []
+
+def load_jobs() -> List[Dict]:
+    """Load jobs from file."""
+    global jobs_data
+    if LOGS_FILE.exists():
+        try:
+            with open(LOGS_FILE, 'r', encoding='utf-8') as f:
+                jobs_data = json.load(f)
+        except (json.JSONDecodeError, IOError) as e:
+            logger.error(f"Failed to load jobs: {e}")
+            jobs_data = []
+    return jobs_data
+
+def save_jobs() -> None:
+    """Save jobs to file."""
+    try:
+        with open(LOGS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(jobs_data, f, indent=2, ensure_ascii=False)
+    except IOError as e:
+        logger.error(f"Failed to save jobs: {e}")
+
+def add_job(job_data: Dict) -> None:
+    """Add new job to the list."""
+    jobs_data.insert(0, job_data)  # 新しいものを先頭に
+    save_jobs()
+
+def update_job_status(job_id: str, status: str, **kwargs) -> None:
+    """Update job status."""
+    for job in jobs_data:
+        if job["job_id"] == job_id:
+            job["status"] = status
+            job.update(kwargs)
+            break
+    save_jobs()
+
+# ====== FastAPI App ======
+app = FastAPI(title="Local Web Transcriber", description="ローカル音声・動画文字起こしサービス")
+
+# Templates
+templates = Jinja2Templates(directory="templates")
+
+# Load jobs on startup
+load_jobs()
+
+# ====== API Endpoints ======
+
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     """Main page."""
     return templates.TemplateResponse("index.html", {"request": request})
 
-@app.get("/job/{job_id}", response_class=HTMLResponse)
-async def job_page(request: Request, job_id: str):
-    """Job status page."""
-    # Validate job_id format
-    try:
-        uuid.UUID(job_id, version=4)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid job ID format")
-    
-    logs = load_logs()
-    filename = logs.get(job_id, {}).get("filename", "")
-    
-    return templates.TemplateResponse("job.html", {
-        "request": request, 
-        "job_id": job_id, 
-        "filename": filename
-    })
+@app.get("/settings", response_class=HTMLResponse)
+async def settings_page(request: Request):
+    """Settings page."""
+    return templates.TemplateResponse("settings.html", {"request": request})
 
-@app.post("/upload", response_class=HTMLResponse)
-async def upload_file(
-    request: Request,
-    file: UploadFile = File(...),
-    language: Optional[str] = Form(None),
-    task: Literal["transcribe", "translate"] = Form(DEFAULTS["DEFAULT_TASK"])
-):
-    """Handle file upload and start transcription."""
-    if _loading["in_progress"]:
-        raise HTTPException(
-            status_code=423, 
-            detail="Model is switching. Please retry in a moment."
-        )
-    
-    # Validate file
-    is_valid, error_msg = await validate_file(file)
-    if not is_valid:
-        raise HTTPException(status_code=400, detail=error_msg)
-    
-    # Generate job ID and prepare file
-    job_id = uuid.uuid4().hex
-    original_filename = file.filename
-    safe_filename = sanitize_filename(original_filename)
-    dest_path = UPLOAD_DIR / f"{job_id}_{safe_filename}"
+@app.get("/api/config")
+async def get_config():
+    """Get current configuration."""
+    return current_config
+
+@app.post("/api/config")
+async def update_config(config: ConfigModel):
+    """Update configuration."""
+    global current_config, current_model
     
     try:
-        # Save uploaded file
-        async with aiofiles.open(dest_path, "wb") as dest_file:
-            while chunk := await file.read(8192):  # Read in chunks
-                await dest_file.write(chunk)
+        # 新しい設定を辞書に変換
+        new_config = config.dict()
         
-        logger.info(f"File uploaded: {original_filename} -> {dest_path}")
+        # 設定を保存
+        save_config(new_config)
+        current_config = new_config
         
-        # Initialize job
-        JOBS[job_id] = {
-            "status": "queued",
-            "progress": 0.0,
-            "filename": original_filename,
-            "segments": [],
-            "preview": "",
-            "output_files": {}
-        }
+        # モデルが変更された場合は現在のモデルをクリア（次回使用時に再読み込み）
+        with model_lock:
+            if (current_model is not None and 
+                (getattr(current_model, '_model_id', None) != config.model_id or
+                 getattr(current_model, '_compute_type', None) != config.compute_type)):
+                current_model = None
+                logger.info("Model cleared due to configuration change")
         
-        upsert_log(job_id, {
-            "status": "queued",
-            "filename": original_filename,
-            "task": task,
-            "model_id": config["model_id"],
-            "compute_type": config["compute_type"]
-        })
-        
-        # Submit job to executor
-        EXECUTOR.submit(transcribe_job, job_id, dest_path, language, task)
-        
-        return templates.TemplateResponse("job.html", {
-            "request": request,
-            "job_id": job_id,
-            "filename": original_filename
-        })
-        
+        return {"status": "success", "message": "設定が更新されました"}
     except Exception as e:
-        # Clean up on error
-        if dest_path.exists():
-            dest_path.unlink()
-        logger.error(f"Upload failed: {e}")
-        raise HTTPException(status_code=500, detail="Upload failed")
+        logger.error(f"Failed to update config: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/api/status/{job_id}")
-async def get_job_status(job_id: str):
-    """Get job status."""
-    # Validate job_id format
-    try:
-        uuid.UUID(job_id, version=4)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid job ID format")
-    
-    # Check active jobs first
-    if job_id in JOBS:
-        job_state = JOBS[job_id]
-        preview = job_state.get("preview") or "\n".join(
-            normalize_newlines(seg.get("text", "")) 
-            for seg in job_state.get("segments", [])
-        )[:2000]
-        
-        return JSONResponse({
-            "status": job_state.get("status"),
-            "progress": round(float(job_state.get("progress", 0.0)), 4),
-            "filename": job_state.get("filename"),
-            "duration": job_state.get("duration"),
-            "language": job_state.get("language"),
-            "language_probability": job_state.get("language_probability"),
-            "preview": preview,
-            "output_files": job_state.get("output_files", {}),
-            "error": job_state.get("error")
-        })
-    
-    # Check completed jobs
-    metadata_path = OUTPUT_DIR / f"{job_id}.json"
-    if metadata_path.exists():
-        try:
-            with open(metadata_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-            
-            txt_path = OUTPUT_DIR / f"{job_id}.txt"
-            preview = ""
-            if txt_path.exists():
-                preview = normalize_newlines(
-                    txt_path.read_text(encoding="utf-8")
-                )[:2000]
-            
-            logs = load_logs()
-            filename = logs.get(job_id, {}).get("filename", "")
-            
-            return JSONResponse({
-                "status": "done",
-                "progress": 1.0,
-                "filename": filename,
-                "duration": data.get("meta", {}).get("duration"),
-                "language": data.get("meta", {}).get("language"),
-                "language_probability": data.get("meta", {}).get("language_probability"),
-                "preview": preview,
-                "output_files": {
-                    "txt": f"/api/download/{job_id}.txt",
-                    "srt": f"/api/download/{job_id}.srt",
-                    "vtt": f"/api/download/{job_id}.vtt",
-                    "json": f"/api/download/{job_id}.json"
-                },
-                "error": None
-            })
-        except (json.JSONDecodeError, IOError) as e:
-            logger.error(f"Error reading job metadata: {e}")
-    
-    # Check logs for job history
-    logs = load_logs()
-    if job_id in logs:
-        log_entry = logs[job_id]
-        return JSONResponse({
-            "status": log_entry.get("status", "unknown"),
-            "progress": 0.0,
-            "filename": log_entry.get("filename"),
-            "duration": log_entry.get("duration"),
-            "language": log_entry.get("language"),
-            "language_probability": None,
-            "preview": "",
-            "output_files": log_entry.get("output_files", {}),
-            "error": log_entry.get("error")
-        })
-    
-    raise HTTPException(status_code=404, detail="Job not found")
-
-@app.get("/api/logs")
-async def get_logs(limit: int = 50):
-    """Get job logs."""
-    if limit <= 0 or limit > 1000:
-        limit = 50
-    
-    logs = load_logs()
-    items = list(logs.values())
-    items.sort(key=lambda x: x.get("updated_at", ""), reverse=True)
-    
-    return JSONResponse(items[:limit])
-
-@app.get("/api/download/{filename}")
-async def download_file(filename: str):
-    """Download output file."""
-    # Validate filename
-    if not filename or '..' in filename or '/' in filename:
-        raise HTTPException(status_code=400, detail="Invalid filename")
-    
-    file_path = OUTPUT_DIR / filename
-    if not file_path.exists() or not file_path.is_file():
-        raise HTTPException(status_code=404, detail="File not found")
-    
-    try:
-        if filename.endswith(".json"):
-            with open(file_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-            return JSONResponse(data)
-        else:
-            # For text files, ensure proper newline handling
-            content = file_path.read_text(encoding="utf-8")
-            # Normalize any escaped newlines to actual newlines
-            content = content.replace("\\n", "\n")
-            return PlainTextResponse(content)
-    except (json.JSONDecodeError, IOError) as e:
-        logger.error(f"Error serving file {filename}: {e}")
-        raise HTTPException(status_code=500, detail="Error reading file")
-
-# ====== Model management APIs ======
 @app.get("/api/models")
-async def list_models():
-    """List available models."""
-    return JSONResponse({
-        "available": AVAILABLE_MODELS,
-        "current": {
-            "model_id": config["model_id"],
-            "compute_type": config["compute_type"]
-        },
-        "loading": _loading
-    })
+async def get_available_models():
+    """Get list of available models."""
+    models = [
+        {"id": "tiny", "size": "39MB", "speed": "超高速", "accuracy": "低"},
+        {"id": "base", "size": "74MB", "speed": "高速", "accuracy": "中"},
+        {"id": "small", "size": "244MB", "speed": "中速", "accuracy": "中高"},
+        {"id": "medium", "size": "769MB", "speed": "中速", "accuracy": "高"},
+        {"id": "large-v2", "size": "1550MB", "speed": "低速", "accuracy": "最高"},
+        {"id": "large-v3", "size": "1550MB", "speed": "低速", "accuracy": "最高"},
+    ]
+    return models
 
-@app.get("/api/model")
-async def get_current_model():
-    """Get current model status."""
-    return JSONResponse({
-        "current": {
-            "model_id": config["model_id"],
-            "compute_type": config["compute_type"]
-        },
-        "loading": _loading
-    })
+@app.get("/api/languages")
+async def get_supported_languages():
+    """Get list of supported languages."""
+    languages = [
+        {"code": "", "name": "自動検出"},
+        {"code": "ja", "name": "日本語"},
+        {"code": "en", "name": "英語"},
+        {"code": "zh", "name": "中国語"},
+        {"code": "ko", "name": "韓国語"},
+        {"code": "es", "name": "スペイン語"},
+        {"code": "fr", "name": "フランス語"},
+        {"code": "de", "name": "ドイツ語"},
+        {"code": "it", "name": "イタリア語"},
+        {"code": "pt", "name": "ポルトガル語"},
+        {"code": "ru", "name": "ロシア語"},
+        {"code": "ar", "name": "アラビア語"},
+        {"code": "hi", "name": "ヒンディー語"},
+        {"code": "th", "name": "タイ語"},
+        {"code": "vi", "name": "ベトナム語"},
+    ]
+    return languages
 
-@app.post("/api/model")
-async def switch_model(request: Request):
-    """Switch to different model."""
-    if _loading["in_progress"]:
-        raise HTTPException(status_code=409, detail="Model switch already in progress")
+@app.post("/api/transcribe")
+async def transcribe_audio(
+    file: UploadFile = File(...),
+    language: str = Form(""),
+    task: str = Form("transcribe"),
+    model: str = Form("")
+):
+    """Transcribe audio/video file."""
+    
+    # ファイル検証
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="ファイルが選択されていません")
+    
+    file_ext = pathlib.Path(file.filename).suffix.lower()
+    if file_ext not in ALLOWED_EXTENSIONS:
+        raise HTTPException(status_code=400, detail=f"サポートされていないファイル形式: {file_ext}")
+    
+    # ジョブID生成
+    job_id = str(uuid.uuid4())
+    timestamp = time.time()
+    
+    # ジョブ情報作成
+    job_data = {
+        "job_id": job_id,
+        "filename": file.filename,
+        "language": language if language else None,
+        "task": task,
+        "model": model if model else current_config.get("model_id", "base"),
+        "status": "processing",
+        "created_at": timestamp,
+        "file_size": 0
+    }
     
     try:
-        body = await request.json()
-    except json.JSONDecodeError:
-        raise HTTPException(status_code=400, detail="Invalid JSON")
-    
-    target_model = body.get("id")
-    compute_type = body.get("compute_type") or config.get("compute_type", DEFAULTS["COMPUTE_TYPE"])
-    
-    if not target_model:
-        raise HTTPException(status_code=400, detail="Missing model ID")
-    
-    queue_switch(target_model, compute_type)
-    
-    return JSONResponse({
-        "ok": True,
-        "queued": {
-            "id": target_model,
-            "compute_type": compute_type
+        # ファイル保存
+        upload_path = UPLOAD_DIR / f"{job_id}_{file.filename}"
+        content = await file.read()
+        
+        # ファイルサイズチェック
+        if len(content) > MAX_FILE_SIZE:
+            raise HTTPException(status_code=400, detail="ファイルサイズが500MBを超えています")
+        if len(content) < MIN_FILE_SIZE:
+            raise HTTPException(status_code=400, detail="ファイルが小さすぎます")
+        
+        job_data["file_size"] = len(content)
+        
+        async with aiofiles.open(upload_path, 'wb') as f:
+            await f.write(content)
+        
+        # ジョブをキューに追加
+        add_job(job_data)
+        
+        # バックグラウンドで処理開始
+        threading.Thread(
+            target=process_transcription_background,
+            args=(job_id, str(upload_path), language, task, model),
+            daemon=True
+        ).start()
+        
+        return {
+            "job_id": job_id,
+            "status": "processing",
+            "message": "文字起こし処理を開始しました"
         }
-    })
-
-# ====== Startup/Shutdown events ======
-@app.on_event("startup")
-async def startup_event():
-    """Application startup."""
-    logger.info("Starting Local Web Transcriber")
-    
-    # Clean up old files on startup
-    cleanup_old_files()
-    
-    # Validate initial model
-    try:
-        get_model()
-        logger.info(f"Initial model loaded: {config['model_id']}")
+        
     except Exception as e:
-        logger.error(f"Failed to load initial model: {e}")
+        logger.error(f"Transcription error: {e}")
+        update_job_status(job_id, "error", error_message=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
 
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Application shutdown."""
-    logger.info("Shutting down Local Web Transcriber")
-    EXECUTOR.shutdown(wait=True)
+def process_transcription_background(job_id: str, file_path: str, language: str, task: str, model: str):
+    """Background transcription processing."""
+    try:
+        logger.info(f"Starting transcription for job {job_id}")
+        
+        # 使用するモデルとパラメータを決定
+        model_id = model if model else current_config.get("model_id", "base")
+        compute_type = current_config.get("compute_type", "int8")
+        
+        # Whisperモデル取得
+        whisper_model = get_whisper_model(model_id, compute_type)
+        
+        # 言語設定
+        language_code = language if language else None
+        
+        # 文字起こし実行
+        segments, info = whisper_model.transcribe(
+            file_path,
+            language=language_code,
+            task=task,
+            vad_filter=True,
+            vad_parameters=dict(min_silence_duration_ms=500)
+        )
+        
+        # 結果をテキストに変換
+        transcription_text = ""
+        segments_data = []
+        
+        for segment in segments:
+            segment_data = {
+                "start": segment.start,
+                "end": segment.end,
+                "text": segment.text.strip()
+            }
+            segments_data.append(segment_data)
+            transcription_text += segment.text.strip() + "\n"
+        
+        # 結果を保存
+        output_data = {
+            "job_id": job_id,
+            "language": info.language,
+            "language_probability": info.language_probability,
+            "duration": info.duration,
+            "transcription": transcription_text.strip(),
+            "segments": segments_data,
+            "model_used": model_id,
+            "task": task
+        }
+        
+        output_path = OUTPUT_DIR / f"{job_id}.json"
+        with open(output_path, 'w', encoding='utf-8') as f:
+            json.dump(output_data, f, indent=2, ensure_ascii=False)
+        
+        # テキストファイルも保存
+        txt_path = OUTPUT_DIR / f"{job_id}.txt"
+        with open(txt_path, 'w', encoding='utf-8') as f:
+            f.write(transcription_text.strip())
+        
+        # ジョブステータス更新
+        update_job_status(
+            job_id, 
+            "completed",
+            completed_at=time.time(),
+            output_path=str(output_path),
+            txt_path=str(txt_path),
+            detected_language=info.language,
+            duration=info.duration
+        )
+        
+        logger.info(f"Transcription completed for job {job_id}")
+        
+    except Exception as e:
+        logger.error(f"Transcription failed for job {job_id}: {e}")
+        update_job_status(job_id, "error", error_message=str(e))
+    
+    finally:
+        # アップロードファイルを削除
+        try:
+            if os.path.exists(file_path):
+                os.unlink(file_path)
+        except Exception as e:
+            logger.error(f"Failed to delete upload file {file_path}: {e}")
 
-# ====== Health check ======
-@app.get("/health")
-async def health_check():
-    """Health check endpoint."""
-    return JSONResponse({
-        "status": "healthy",
-        "model_loaded": _model_cache["model"] is not None,
-        "current_model": config["model_id"],
-        "loading": _loading["in_progress"]
-    })
+@app.get("/api/jobs")
+async def get_jobs():
+    """Get job history."""
+    return jobs_data
+
+@app.get("/api/jobs/{job_id}")
+async def get_job_detail(job_id: str):
+    """Get job details."""
+    for job in jobs_data:
+        if job["job_id"] == job_id:
+            return job
+    raise HTTPException(status_code=404, detail="ジョブが見つかりません")
+
+@app.get("/api/jobs/{job_id}/download")
+async def download_result(job_id: str):
+    """Download transcription result."""
+    for job in jobs_data:
+        if job["job_id"] == job_id and job["status"] == "completed":
+            txt_path = OUTPUT_DIR / f"{job_id}.txt"
+            if txt_path.exists():
+                return FileResponse(
+                    path=str(txt_path),
+                    filename=f"transcription_{job['filename']}.txt",
+                    media_type="text/plain"
+                )
+    
+    raise HTTPException(status_code=404, detail="結果ファイルが見つかりません")
+
+@app.delete("/api/jobs/{job_id}")
+async def delete_job(job_id: str):
+    """Delete job and its files."""
+    global jobs_data
+    
+    job_found = False
+    for i, job in enumerate(jobs_data):
+        if job["job_id"] == job_id:
+            # ファイル削除
+            for path in [OUTPUT_DIR / f"{job_id}.json", OUTPUT_DIR / f"{job_id}.txt"]:
+                try:
+                    if path.exists():
+                        path.unlink()
+                except Exception as e:
+                    logger.error(f"Failed to delete file {path}: {e}")
+            
+            # ジョブ削除
+            jobs_data.pop(i)
+            job_found = True
+            break
+    
+    if not job_found:
+        raise HTTPException(status_code=404, detail="ジョブが見つかりません")
+    
+    save_jobs()
+    return {"status": "success", "message": "ジョブが削除されました"}
+
+@app.get("/api/status")
+async def get_system_status():
+    """Get system status."""
+    return {
+        "status": "running",
+        "current_config": current_config,
+        "model_loaded": current_model is not None,
+        "active_jobs": len([j for j in jobs_data if j["status"] == "processing"]),
+        "total_jobs": len(jobs_data)
+    }
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=7860)
