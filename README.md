@@ -53,8 +53,8 @@
 
 ### **1. プロジェクトの取得**
 ```bash
-git clone https://github.com/ornongk/local-web-transcriber-improved.git
-cd local-web-transcriber-improved
+git clone https://github.com/ornongk/WhisperLocalWeb.jp.git
+cd WhisperLocalWeb.jp
 ```
 
 ### **2. 日本語環境設定**
