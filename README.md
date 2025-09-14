@@ -1,60 +1,72 @@
-# 🎤 Local Web Transcriber (Enhanced Version)
+# 🎤 Local Web Transcriber (日本語特化版)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![Docker](https://img.shields.io/badge/docker-%230db7ed.svg?style=flat&logo=docker&logoColor=white)](https://www.docker.com/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-005571?style=flat&logo=fastapi)](https://fastapi.tiangolo.com/)
+[![日本語対応](https://img.shields.io/badge/言語-日本語完全対応-red.svg)](https://github.com/yourusername/local-web-transcriber-improved)
 
-高性能・高セキュリティなローカル音声・動画文字起こしWebアプリケーション。OpenAI Whisperを使用し、プライバシーを重視したオフライン処理を実現します。
+**日本語大好き人間のための、Whisper音声・動画文字起こしWebアプリケーション**
 
-## ✨ **主な機能**
+## **🎯 全部日本語であってほしい人向けです**
+- **完全日本語UI**で迷わず操作
+- **日本語最適化**で高精度な文字起こし
+- **分かりやすい設定項目**と説明
+- **日本語の言語的特徴**を考慮した処理
+- **100%ローカル処理**でデータが外部に送信されない
+- **議事録地獄**からの解放
 
-### 🎯 **コア機能**
-- **高精度文字起こし**: OpenAI Whisper使用による多言語対応
-- **動画対応**: 音声ファイルに加えて動画ファイルからの音声抽出
-- **複数出力形式**: TXT, SRT, VTT, JSON形式での出力
-- **リアルタイム進捗**: WebUI上でのリアルタイム処理状況表示
-- **モデル切り替え**: tiny〜large-v3まで用途に応じた選択可能
+## 🚀 **主な機能**
 
-### 🔒 **セキュリティ機能**
-- **ファイル検証**: 拡張子・サイズ・内容の厳格な検証
-- **パストラバーサル対策**: ディレクトリトラバーサル攻撃の防御
-- **自動クリーンアップ**: アップロードファイルの自動削除
-- **非特権実行**: rootユーザーを使わない安全な実行
-- **セキュリティヘッダー**: XSS, CSRF, Clickjacking対策
+### 🎤 **日本語文字起こし**
+- **OpenAI Whisper**: メインの文字起こし機能
+- **複数モデル対応**: ポチポチによる精度・速度の変更可能
+- **リアルタイム進捗**: 処理状況がわかるといいですよね
+- **多様な入力形式**: 音声・動画ファイル両方に対応（動画は未検証）
 
-### ⚡ **パフォーマンス機能**
-- **非同期処理**: FastAPIによる高パフォーマンス
-- **リソース制限**: メモリ・CPU使用量の制限
-- **プログレス最適化**: 効率的な進捗更新
-- **Nginx統合**: リバースプロキシによる高速化
+### 🔒 **プライバシー**
+- **完全ローカル処理**: 音声データは外部に流出させません
+- **セキュア設計**: ファイル検証、不正アクセス防止
+- **自動削除**: デフォルトでは24時間後に消えます（設定で変更可能）
+- **暗号化対応**: HTTPS通信でデータ保護も可能（どうするかは調べてください）
 
-### 🛠 **運用機能**
-- **ヘルスチェック**: アプリケーション状態の監視
-- **自動バックアップ**: データの自動保護
-- **ログ集約**: 詳細なログ記録と監視
-- **コンテナ監視**: Prometheus連携対応
+### ⚡ **使用したい人はたくさんいるはず**
+- **Docker化**: 簡単導入
+- **リソース最適化**: メモリ・CPU使用量を効率的に管理しているかもしれません
+- **自動復旧**: エラー時の自動回復機能は動作しているか不明です
+- GPU搭載していなくても**自宅のPC**に導入して活用（むしろ、開発者本人がGPU使用してのテストしていません）
 
-## 🚀 **クイックスタート**
+## **出力形式**
+| 形式 | 用途 |
+|------|------|
+| **TXT** | テキスト編集 |
+| **SRT** | 動画字幕 |
+| **VTT** | Web字幕 | 
+| **JSON** | データ分析 |
+
+## 🚀 **かんたんスタートガイド**
 
 ### **必要な環境**
 - Docker & Docker Compose
-- 4GB以上のRAM推奨
-- CUDA対応GPU（オプション、CPU使用も可能）
+- 4GB以上のメモリ（推奨：8GB以上）
+- 日本語が表示できるブラウザ
 
-### **1. リポジトリのクローン**
+### **1. プロジェクトの取得**
 ```bash
-git clone https://github.com/yourusername/local-web-transcriber-improved.git
+git clone https://github.com/ornongk/local-web-transcriber-improved.git
 cd local-web-transcriber-improved
 ```
 
-### **2. 初期設定**
+### **2. 日本語環境設定**
 ```bash
 # 自動セットアップ
 make setup
 
-# 環境変数を編集
-nano .env
+# 設定確認
+cat .env
+# MODEL_ID=base
+# DEFAULT_LANGUAGE=ja  ← 日本語がデフォルト
+# DEFAULT_TASK=transcribe
 ```
 
 ### **3. アプリケーション起動**
@@ -63,283 +75,103 @@ nano .env
 make build
 make run
 
-# ブラウザでアクセス
+# アクセス
 open http://localhost:7860
 ```
 
-## 📋 **詳細セットアップ**
+**🎉 簡単でしょ！**
 
-### **環境変数設定**
+## 🎯 **使い方**
 
-`.env`ファイルで以下の設定が可能です：
+### **基本的な文字起こし手順**
+1. **ファイル選択**: 音声・動画ファイルをドラッグ＆ドロップ
+2. **言語確認**: 自動的に日本語が選択される
+3. **開始**: 「🚀 文字起こし開始」ボタンをクリック
+4. **結果取得**: TXT、SRT、VTT形式で日本語文字起こし結果をダウンロード
 
+### **日本語特有の設定**
 ```bash
-# === 基本設定 ===
-MODEL_ID=base                    # Whisperモデル (tiny/base/small/medium/large-v3)
-COMPUTE_TYPE=int8                # 演算精度 (int8/float16/float32)
-DEFAULT_LANGUAGE=ja              # デフォルト言語
-MAX_WORKERS=2                    # 並列処理数
-
-# === セキュリティ設定 ===
-MAX_FILE_SIZE=524288000          # 最大ファイルサイズ (500MB)
-FILE_RETENTION_HOURS=24          # ファイル保持時間
-
-# === パフォーマンス設定 ===
-MEMORY_LIMIT=4G                  # メモリ制限
-CPU_LIMIT=2.0                    # CPU制限
+# 日本語に最適化された推奨設定
+MODEL_ID=base          # 日本語認識に最適
+COMPUTE_TYPE=int8      # 高速処理
+DEFAULT_LANGUAGE=ja    # 日本語デフォルト
 ```
 
-### **SSL/HTTPS設定**
+## 🔧 **日本語環境での運用**
 
-本番環境でのHTTPS対応：
-
+### **よく使われるコマンド**
 ```bash
-# 自己署名証明書生成（開発用）
-make generate-ssl
-
-# Let's Encrypt証明書（本番用）
-# certbot等を使用してnginx/ssl/に配置
+make help              # 日本語ヘルプ表示
+make status            # 状態確認（日本語表示）
+make logs              # 日本語ログ表示
+make health-check      # 動作確認
 ```
 
-### **監視機能の有効化**
-
+### **トラブルシューティング（日本語）**
 ```bash
-# Prometheus監視付きで起動
-make run-monitoring
+# 文字化けが発生した場合
+export LANG=ja_JP.UTF-8
 
-# 監視ダッシュボード
-open http://localhost:9090
+# 日本語ファイル名が正しく表示されない場合
+make fix-encoding
+
+# ログを日本語で確認
+make logs-app | grep "日本語"
 ```
 
-## 🔧 **開発・運用コマンド**
+## 🌐 **参考**
 
-Makefileによる豊富な運用支援コマンド：
+### **利用シーン**
+| シーン | メリット | 推奨設定 |
+|--------|----------|----------|
+| **ビジネス会議** | 議事録作成の効率化 | base/int8 |
+| **学術研究** | インタビュー分析 | medium/float16 |
+| **コンテンツ制作** | 字幕・テロップ作成 | large-v3/float16 |
+| **語学学習** | 発音・聞き取り練習 | small/int8 |
+| **法務・医療** | 高精度な記録作成 | large-v3/float32 |
 
-```bash
-# === 基本操作 ===
-make help                # ヘルプ表示
-make setup               # 初期環境セットアップ
-make build               # Dockerイメージビルド
-make run                 # アプリケーション起動
-make stop                # アプリケーション停止
-make restart             # アプリケーション再起動
+## 📈 **パフォーマンス（おおよそ）**
 
-# === 開発支援 ===
-make test                # テスト実行
-make test-coverage       # カバレッジ付きテスト
-make lint                # コード品質チェック
-make format              # コードフォーマット
-make security-check      # セキュリティチェック
+### **推奨システム構成**
+| 用途 | CPU | メモリ | ストレージ | モデル推奨 |
+|------|-----|--------|------------|------------|
+| **軽量利用** | 2コア | 4GB | 10GB | tiny/base |
+| **標準利用** | 4コア | 8GB | 20GB | small/medium |
+| **高精度利用** | 8コア+ | 16GB+ | 50GB | large-v3 |
+| **業務利用** | 8コア+ | 32GB+ | 100GB | large-v3 |
 
-# === 監視・ログ ===
-make logs                # 全ログ表示
-make logs-app            # アプリログのみ
-make status              # システム状態確認
-make health-check        # ヘルスチェック
+### **処理速度の目安**
+| モデル | 1分の音声 | 10分の音声 | 1時間の音声 |
+|--------|-----------|------------|-------------|
+| **tiny** | 約10秒 | 約1.5分 | 約10分 |
+| **base** | 約20秒 | 約3分 | 約20分 |
+| **small** | 約45秒 | 約7分 | 約45分 |
+| **medium** | 約1.5分 | 約15分 | 約1.5時間 |
+| **large-v3** | 約3分 | 約30分 | 約3時間 |
 
-# === バックアップ・復旧 ===
-make backup              # データバックアップ
-make restore BACKUP_FILE=filename  # データ復元
-make clean               # システムクリーンアップ
+## **よくある質問**
+- **Q**: 関西弁も認識できますか？
+- **A**: はい、関西弁も高精度で認識できます。
 
-# === 本番運用 ===
-make deploy-check        # デプロイ前チェック
-make load-test           # 負荷テスト
-make benchmark           # パフォーマンステスト
-```
+- **Q**: 敬語が正しく文字起こしされますか？
+- **A**: はい、ビジネス敬語も適切に認識・表記されます。
 
-## 🛡️ **セキュリティ対策**
-
-### **実装済み対策**
-- ✅ **ファイルアップロード検証**: 拡張子・サイズ・内容チェック
-- ✅ **パストラバーサル対策**: `../`等の危険なパス排除
-- ✅ **リソース制限**: DoS攻撃対策
-- ✅ **セキュリティヘッダー**: XSS, CSRF, Clickjacking対策
-- ✅ **非特権実行**: rootユーザーを使わない安全な実行
-- ✅ **自動クリーンアップ**: 機密ファイルの自動削除
-
-### **セキュリティチェック**
-```bash
-# 定期的なセキュリティ監査
-make security-check
-
-# 依存関係の脆弱性チェック
-safety check
-
-# コードの静的解析
-bandit -r app/
-```
-
-## 📊 **サポート形式**
-
-### **入力形式**
-| 形式 | 拡張子 | 備考 |
-|------|--------|------|
-| 音声 | MP3, WAV, M4A, FLAC, OGG | 高品質音声推奨 |
-| 動画 | MP4, AVI, MOV, WebM | 音声が自動抽出 |
-
-### **出力形式**
-| 形式 | 用途 | 特徴 |
-|------|------|------|
-| TXT | テキスト編集 | プレーンテキスト |
-| SRT | 字幕ファイル | 動画編集ソフト対応 |
-| VTT | Web字幕 | ブラウザ再生対応 |
-| JSON | API連携 | 詳細なメタデータ付き |
-
-## ⚙️ **システム要件**
-
-### **推奨環境**
-
-| コンポーネント | 推奨スペック | 備考 |
-|----------------|--------------|------|
-| CPU | 4コア以上 | AVX2対応推奨 |
-| RAM | 8GB以上 | large-v3使用時は16GB推奨 |
-| ストレージ | 10GB以上 | モデル・データ用 |
-| GPU | CUDA対応（オプション） | 高速処理用 |
-
-### **モデル別要件**
-
-| モデル | RAM使用量 | 処理速度 | 精度 |
-|--------|-----------|----------|------|
-| tiny | ~1GB | 高速 | 基本 |
-| base | ~2GB | 高速 | 良好 |
-| small | ~3GB | 中程度 | 良好 |
-| medium | ~5GB | 中程度 | 高精度 |
-| large-v3 | ~10GB | 低速 | 最高精度 |
-
-## 🔍 **トラブルシューティング**
-
-### **よくある問題**
-
-#### **1. メモリ不足エラー**
-```bash
-# モデルサイズを小さく
-MODEL_ID=base
-COMPUTE_TYPE=int8
-
-# メモリ制限を調整
-MEMORY_LIMIT=2G
-```
-
-#### **2. ファイルアップロード失敗**
-```bash
-# ファイルサイズを確認
-ls -lh your_file.mp4
-
-# 制限値を調整
-MAX_FILE_SIZE=1073741824  # 1GB
-```
-
-#### **3. SSL証明書エラー**
-```bash
-# 自己署名証明書を再生成
-make generate-ssl
-
-# 権限を確認
-chmod 600 nginx/ssl/*.pem
-```
-
-### **ログ確認**
-```bash
-# アプリケーションログ
-make logs-app
-
-# エラーログのみ
-docker compose logs transcriber | grep ERROR
-
-# Nginxエラーログ
-cat logs/nginx/transcriber_error.log
-```
-
-### **リセット・復旧**
-```bash
-# 完全リセット
-make emergency-stop
-make clean
-make setup
-make build
-make run
-
-# データのみクリーンアップ
-make clean-data
-```
-
-## 📈 **パフォーマンス最適化**
-
-### **GPU使用時**
-```bash
-# CUDA対応の確認
-docker run --gpus all nvidia/cuda:11.8-runtime-ubuntu20.04 nvidia-smi
-
-# GPU使用でのモデル設定
-MODEL_ID=large-v3
-COMPUTE_TYPE=float16
-```
-
-### **CPU最適化**
-```bash
-# ワーカー数の調整
-MAX_WORKERS=4  # CPUコア数に応じて調整
-
-# メモリ効率重視
-COMPUTE_TYPE=int8
-MODEL_ID=base
-```
-
-### **ネットワーク最適化**
-```bash
-# Nginxでの静的ファイルキャッシュ
-# nginx/default.confで設定済み
-
-# 圧縮の有効化
-gzip on;
-gzip_types text/plain application/json;
-```
-
-## 🤝 **コントリビューション**
-
-プロジェクトへの貢献を歓迎します！
-
-### **開発環境セットアップ**
-```bash
-# 開発用依存関係のインストール
-make install-dev
-
-# 開発モードで起動
-make run-dev
-
-# テスト実行
-make test
-
-# コード品質チェック
-make lint
-make format
-```
-
-### **プルリクエストガイドライン**
-1. フォークしてブランチを作成
-2. 変更内容をテスト
-3. コード品質チェック通過
-4. わかりやすいコミットメッセージ
-5. プルリクエスト作成
-
-## 📄 **ライセンス**
-
-MIT License - 詳細は[LICENSE](LICENSE)ファイルを参照
-
-## 🙏 **謝辞**
-
-- [OpenAI Whisper](https://github.com/openai/whisper) - 音声認識エンジン
-- [faster-whisper](https://github.com/guillaumekln/faster-whisper) - 高速化実装
-- [FastAPI](https://fastapi.tiangolo.com/) - Webフレームワーク
-- [Docker](https://www.docker.com/) - コンテナ化
-
-## 📞 **サポート**
-
-- **Issues**: GitHub Issuesで問題を報告
-- **Discussions**: GitHub Discussionsで質問・提案
-- **Wiki**: プロジェクトWikiで詳細ドキュメント
+- **Q**: 専門用語（医療・法務）は対応していますか？
+- **A**: コンテキストから判断して、多くの専門用語を正しく認識します。（ただし、large以上に限る）
 
 ---
 
-**🚀 Enjoy transcribing with privacy and performance! 🎯**
+## 🎌 **「日本語で、日本語のために作られた」文字起こしサービス**
+
+**このアプリケーションは、日本語ユーザーが本当に使いやすい文字起こしサービスを目指して開発されました。**
+
+### **🎯 こんな方におすすめ**
+- 英語ベースのサービスで操作に困っていた方
+- 日本語の文字起こし精度に不満があった方
+- プライバシーを重視してローカル処理したい方
+- 日本語環境で安定して動作するツールをお探しの方
+- 議事録を生成AIに要約してもらう前段階の状態の準備がしたくてもできなかった人
+
+---
+
+**📝 ライセンス**: MIT License | **🌟 貢献歓迎** | **🇯🇵 Made with ❤️ for Japanese Users**
