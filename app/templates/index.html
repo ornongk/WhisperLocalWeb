@@ -77,25 +77,36 @@
       margin-bottom: 24px;
     }
     
-    /* 修正されたレイアウト設定 */
-    .form-row {
+    /* ファイル選択エリア（上段・フル幅） */
+    .file-upload-area {
+      margin-bottom: 20px;
+      padding: 20px;
+      border: 2px dashed var(--border-color);
+      border-radius: 12px;
+      background: var(--bg-hover);
+      transition: all 0.3s ease;
+    }
+    
+    .file-upload-area:hover {
+      border-color: var(--primary-color);
+      background: #f0f9ff;
+    }
+    
+    .file-upload-area.dragover {
+      border-color: var(--primary-color);
+      background: #dbeafe;
+    }
+    
+    /* 設定エリア（下段・2カラム） */
+    .settings-row {
       display: grid;
-      grid-template-columns: 1fr 1fr 1fr;
+      grid-template-columns: 1fr 1fr;
       gap: 20px;
-      align-items: end;
       margin-bottom: 20px;
     }
     
-    /* モバイル対応 */
-    @media (max-width: 992px) {
-      .form-row {
-        grid-template-columns: 1fr 1fr;
-        gap: 16px;
-      }
-    }
-    
     @media (max-width: 768px) {
-      .form-row {
+      .settings-row {
         grid-template-columns: 1fr;
         gap: 16px;
       }
@@ -104,7 +115,12 @@
     .form-field {
       display: flex;
       flex-direction: column;
-      min-width: 0; /* グリッドオーバーフローを防ぐ */
+    }
+    
+    .form-field-full {
+      display: flex;
+      flex-direction: column;
+      width: 100%;
     }
     
     label {
@@ -135,56 +151,83 @@
       box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
     }
     
-    /* ファイル選択ボタンのスタイル調整 */
-    input[type=file] {
-      padding: 8px 12px;
+    /* ファイル選択の特別スタイル */
+    .file-input-wrapper {
+      position: relative;
+    }
+    
+    .file-input-display {
+      padding: 16px;
+      border: 2px solid var(--border-color);
+      border-radius: 8px;
+      background: white;
+      min-height: 60px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      text-align: center;
+    }
+    
+    .file-input-display:hover {
+      border-color: var(--primary-color);
+      background: var(--bg-hover);
+    }
+    
+    .file-input-display.has-file {
+      background: #f0fdf4;
+      border-color: var(--success-color);
+    }
+    
+    .file-input-hidden {
+      position: absolute;
+      opacity: 0;
+      width: 100%;
+      height: 100%;
       cursor: pointer;
     }
     
-    input[type=file]::-webkit-file-upload-button {
-      background: var(--primary-color);
-      color: white;
-      border: none;
-      border-radius: 6px;
-      padding: 8px 12px;
-      margin-right: 12px;
-      cursor: pointer;
-      font-size: 12px;
+    .file-placeholder {
+      color: var(--text-muted);
+      font-size: 16px;
+    }
+    
+    .file-selected {
+      color: var(--success-color);
       font-weight: 600;
-    }
-    
-    input[type=file]::-webkit-file-upload-button:hover {
-      background: var(--primary-hover);
     }
     
     .btn {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      padding: 12px 24px;
+      padding: 14px 28px;
       border: 1px solid var(--border-color);
       border-radius: 8px;
-      font-size: 14px;
+      font-size: 16px;
       font-weight: 600;
       text-decoration: none;
       color: var(--text-color);
       background: white;
       cursor: pointer;
       transition: all 0.2s;
-      margin-right: 8px;
-      margin-bottom: 8px;
       gap: 8px;
+      min-height: 48px;
     }
     
     .btn:hover {
       background: var(--bg-hover);
       border-color: var(--primary-color);
+      transform: translateY(-1px);
     }
     
     .btn-primary {
       background: var(--primary-color);
       color: white;
       border-color: var(--primary-color);
+      font-size: 18px;
+      padding: 16px 32px;
     }
     
     .btn-primary:hover {
@@ -195,6 +238,7 @@
     .btn:disabled {
       opacity: 0.5;
       cursor: not-allowed;
+      transform: none;
     }
     
     .badge {
@@ -304,18 +348,19 @@
     .file-info {
       font-size: 12px;
       color: var(--text-muted);
-      margin-top: 4px;
+      margin-top: 8px;
       line-height: 1.4;
     }
     
-    /* ボタンエリアを独立させる */
+    /* ボタンエリア */
     .button-area {
-      margin-top: 24px;
-      padding-top: 20px;
+      margin-top: 32px;
+      padding-top: 24px;
       border-top: 1px solid var(--border-color);
+      text-align: center;
     }
     
-    /* モデル設定行の改善 */
+    /* モデル設定行 */
     .model-row {
       display: grid;
       grid-template-columns: 2fr 2fr 2fr 1fr;
@@ -334,6 +379,19 @@
       .model-row {
         grid-template-columns: 1fr;
         gap: 16px;
+      }
+      
+      body {
+        padding: 16px;
+      }
+      
+      .file-upload-area {
+        padding: 16px;
+      }
+      
+      .btn-primary {
+        font-size: 16px;
+        padding: 14px 24px;
       }
     }
   </style>
@@ -386,21 +444,36 @@
   <section class="card">
     <h2>📁 新規文字起こし</h2>
     <form id="upload-form" action="/upload" method="post" enctype="multipart/form-data">
+      <!-- ファイル選択エリア（上段） -->
       <div class="form-group">
-        <div class="form-row">
-          <div class="form-field">
-            <label for="file">音声・動画ファイル *</label>
-            <input type="file" id="file" name="file" accept="audio/*,video/*,.mp3,.wav,.mp4,.avi,.mov,.m4a,.flac,.ogg,.webm" required aria-describedby="file-help">
-            <div id="file-help" class="file-info">対応形式: MP3, WAV, MP4, AVI, MOV, M4A, FLAC, OGG, WebM (最大500MB)</div>
+        <div class="form-field-full">
+          <label for="file">音声・動画ファイル *</label>
+          <div class="file-upload-area" id="file-upload-area">
+            <div class="file-input-wrapper">
+              <div class="file-input-display" id="file-display">
+                <div class="file-placeholder">
+                  📁 クリックしてファイルを選択 または ここにドラッグ＆ドロップ
+                </div>
+              </div>
+              <input type="file" id="file" name="file" class="file-input-hidden" 
+                     accept="audio/*,video/*,.mp3,.wav,.mp4,.avi,.mov,.m4a,.flac,.ogg,.webm" required>
+            </div>
           </div>
+          <div class="file-info">対応形式: MP3, WAV, MP4, AVI, MOV, M4A, FLAC, OGG, WebM (最大500MB)</div>
+        </div>
+      </div>
+      
+      <!-- 設定エリア（下段） -->
+      <div class="form-group">
+        <div class="settings-row">
           <div class="form-field">
             <label for="language">言語 (オプション)</label>
-            <input type="text" id="language" name="language" placeholder="ja (空白で自動検出)" maxlength="10" aria-describedby="lang-help">
-            <div id="lang-help" class="file-info">例: ja, en, zh, fr (ISO 639-1コード)</div>
+            <input type="text" id="language" name="language" placeholder="ja (空白で自動検出)" maxlength="10">
+            <div class="file-info">例: ja, en, zh, fr (ISO 639-1コード)</div>
           </div>
           <div class="form-field">
             <label for="task">タスク</label>
-            <select id="task" name="task" aria-label="タスク選択">
+            <select id="task" name="task">
               <option value="transcribe" selected>transcribe (同言語で文字起こし)</option>
               <option value="translate">translate (英語に翻訳)</option>
             </select>
@@ -408,6 +481,7 @@
         </div>
       </div>
       
+      <!-- ボタンエリア -->
       <div class="button-area">
         <button type="submit" class="btn btn-primary" id="submit-btn">
           <span id="submit-text">🚀 文字起こし開始</span>
@@ -482,6 +556,103 @@ async function fetchJSON(url, options = {}) {
     console.error('Fetch error:', error);
     throw error;
   }
+}
+
+// Enhanced file upload handling
+function updateFileDisplay(file) {
+  const display = document.getElementById('file-display');
+  const uploadArea = document.getElementById('file-upload-area');
+  
+  if (file) {
+    const fileSize = (file.size / (1024 * 1024)).toFixed(2);
+    display.innerHTML = `
+      <div class="file-selected">
+        ✅ ${file.name} (${fileSize}MB)
+      </div>
+    `;
+    display.classList.add('has-file');
+    uploadArea.classList.remove('dragover');
+  } else {
+    display.innerHTML = `
+      <div class="file-placeholder">
+        📁 クリックしてファイルを選択 または ここにドラッグ＆ドロップ
+      </div>
+    `;
+    display.classList.remove('has-file');
+  }
+}
+
+// Drag and drop functionality
+const fileUploadArea = document.getElementById('file-upload-area');
+const fileInput = document.getElementById('file');
+const fileDisplay = document.getElementById('file-display');
+
+fileUploadArea.addEventListener('dragover', (e) => {
+  e.preventDefault();
+  fileUploadArea.classList.add('dragover');
+});
+
+fileUploadArea.addEventListener('dragleave', (e) => {
+  e.preventDefault();
+  fileUploadArea.classList.remove('dragover');
+});
+
+fileUploadArea.addEventListener('drop', (e) => {
+  e.preventDefault();
+  fileUploadArea.classList.remove('dragover');
+  
+  const files = e.dataTransfer.files;
+  if (files.length > 0) {
+    fileInput.files = files;
+    updateFileDisplay(files[0]);
+    validateFile(files[0]);
+  }
+});
+
+fileDisplay.addEventListener('click', () => {
+  fileInput.click();
+});
+
+fileInput.addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  updateFileDisplay(file);
+  if (file) {
+    validateFile(file);
+  }
+});
+
+function validateFile(file) {
+  const allowedTypes = [
+    'audio/mpeg', 'audio/wav', 'audio/mp4', 'audio/x-m4a',
+    'audio/flac', 'audio/ogg', 'audio/webm',
+    'video/mp4', 'video/avi', 'video/quicktime', 'video/webm'
+  ];
+  
+  const allowedExtensions = ['.mp3', '.wav', '.mp4', '.avi', '.mov', '.m4a', '.flac', '.ogg', '.webm'];
+  const fileExtension = file.name.toLowerCase().substring(file.name.lastIndexOf('.'));
+  
+  if (!allowedTypes.includes(file.type) && !allowedExtensions.includes(fileExtension)) {
+    showAlert('対応していないファイル形式です');
+    updateFileDisplay(null);
+    fileInput.value = '';
+    return false;
+  }
+  
+  if (file.size > 500 * 1024 * 1024) {
+    showAlert('ファイルサイズが大きすぎます (最大500MB)');
+    updateFileDisplay(null);
+    fileInput.value = '';
+    return false;
+  }
+  
+  if (file.size < 1024) {
+    showAlert('ファイルサイズが小さすぎます');
+    updateFileDisplay(null);
+    fileInput.value = '';
+    return false;
+  }
+  
+  return true;
 }
 
 // Model management
@@ -585,7 +756,7 @@ document.getElementById('btn_switch').addEventListener('click', async () => {
   }
 });
 
-// File upload handling
+// Form submission
 document.getElementById('upload-form').addEventListener('submit', function(e) {
   const fileInput = document.getElementById('file');
   const submitBtn = document.getElementById('submit-btn');
@@ -600,16 +771,8 @@ document.getElementById('upload-form').addEventListener('submit', function(e) {
   
   const file = fileInput.files[0];
   
-  // File size validation (500MB = 500 * 1024 * 1024 bytes)
-  if (file.size > 500 * 1024 * 1024) {
+  if (!validateFile(file)) {
     e.preventDefault();
-    showAlert('ファイルサイズが大きすぎます (最大500MB)');
-    return;
-  }
-  
-  if (file.size < 1024) {
-    e.preventDefault();
-    showAlert('ファイルサイズが小さすぎます');
     return;
   }
   
@@ -617,32 +780,6 @@ document.getElementById('upload-form').addEventListener('submit', function(e) {
   submitBtn.disabled = true;
   submitText.style.display = 'none';
   submitLoading.style.display = 'inline-block';
-});
-
-// File input validation
-document.getElementById('file').addEventListener('change', function(e) {
-  const file = e.target.files[0];
-  if (!file) return;
-  
-  const allowedTypes = [
-    'audio/mpeg', 'audio/wav', 'audio/mp4', 'audio/x-m4a',
-    'audio/flac', 'audio/ogg', 'audio/webm',
-    'video/mp4', 'video/avi', 'video/quicktime', 'video/webm'
-  ];
-  
-  const allowedExtensions = ['.mp3', '.wav', '.mp4', '.avi', '.mov', '.m4a', '.flac', '.ogg', '.webm'];
-  const fileExtension = file.name.toLowerCase().substring(file.name.lastIndexOf('.'));
-  
-  if (!allowedTypes.includes(file.type) && !allowedExtensions.includes(fileExtension)) {
-    showAlert('対応していないファイル形式です');
-    e.target.value = '';
-    return;
-  }
-  
-  // Show file info
-  const fileSize = (file.size / (1024 * 1024)).toFixed(2);
-  const fileHelp = document.getElementById('file-help');
-  fileHelp.textContent = `選択中: ${file.name} (${fileSize}MB)`;
 });
 
 // Logs management
