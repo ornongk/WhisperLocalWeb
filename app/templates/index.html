@@ -55,6 +55,47 @@
       color: var(--text-muted);
       margin: 0;
     }
+
+    /* ナビゲーションバー追加 */
+    .nav-bar {
+      display: flex;
+      justify-content: center;
+      gap: 16px;
+      margin-bottom: 30px;
+      padding: 16px;
+      background: var(--bg-card);
+      border-radius: 12px;
+      box-shadow: var(--shadow);
+    }
+
+    .nav-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 20px;
+      text-decoration: none;
+      color: var(--text-color);
+      border-radius: 8px;
+      transition: all 0.2s ease;
+      font-weight: 500;
+    }
+
+    .nav-link:hover {
+      background-color: var(--bg-hover);
+      color: var(--primary-color);
+    }
+
+    .nav-link.active {
+      background-color: var(--primary-color);
+      color: white;
+    }
+
+    @media (max-width: 640px) {
+      .nav-bar {
+        flex-direction: column;
+        gap: 8px;
+      }
+    }
     
     .card {
       background: var(--bg-card);
@@ -322,6 +363,21 @@
       color: var(--text-muted);
       font-size: 0.875rem;
     }
+
+    /* 現在のモデル情報表示 */
+    .current-model-info {
+      background-color: #f0f9ff;
+      border: 1px solid #bae6fd;
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 20px;
+      font-size: 0.875rem;
+    }
+
+    .current-model-info .model-name {
+      font-weight: 600;
+      color: var(--primary-color);
+    }
     
     /* レスポンシブ調整 */
     @media (max-width: 768px) {
@@ -343,6 +399,22 @@
   <div class="header">
     <h1>🎤 Local Web Transcriber</h1>
     <p>プライベートで安全な音声・動画文字起こしサービス</p>
+  </div>
+
+  <!-- ナビゲーションバー -->
+  <nav class="nav-bar">
+    <a href="/" class="nav-link active">
+      📝 文字起こし
+    </a>
+    <a href="/settings" class="nav-link">
+      ⚙️ 設定
+    </a>
+  </nav>
+
+  <!-- 現在のモデル情報 -->
+  <div class="current-model-info" id="current-model-info">
+    <div>現在のモデル: <span class="model-name" id="current-model">読み込み中...</span></div>
+    <div>言語設定: <span id="current-language">読み込み中...</span></div>
   </div>
 
   <!-- 新規文字起こし -->
@@ -442,6 +514,23 @@
     const progressFill = document.getElementById('progress-fill');
     const progressText = document.getElementById('progress-text');
 
+    // 現在の設定情報を読み込み
+    async function loadCurrentConfig() {
+      try {
+        const response = await fetch('/api/config');
+        const config = await response.json();
+        
+        document.getElementById('current-model').textContent = 
+          `${config.model_id} (${config.compute_type})`;
+        document.getElementById('current-language').textContent = 
+          config.default_language === 'ja' ? '日本語' : config.default_language;
+      } catch (error) {
+        console.error('Failed to load config:', error);
+        document.getElementById('current-model').textContent = 'エラー';
+        document.getElementById('current-language').textContent = 'エラー';
+      }
+    }
+
     // ファイルサイズフォーマット
     function formatFileSize(bytes) {
       if (bytes === 0) return '0 Bytes';
@@ -530,7 +619,8 @@
         clearInterval(progressInterval);
 
         if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
+          const errorData = await response.json();
+          throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
         }
 
         const result = await response.json();
@@ -602,7 +692,7 @@
                         job.status === 'processing' ? '処理中' : 'エラー'}
                     </span>
                   </td>
-                  <td>${new Date(job.created_at).toLocaleString('ja-JP')}</td>
+                  <td>${new Date(job.created_at * 1000).toLocaleString('ja-JP')}</td>
                   <td>
                     ${job.status === 'completed' ? 
                       `<a href="/api/jobs/${job.job_id}/download" class="btn btn-primary" style="padding: 6px 12px; font-size: 0.875rem;">📥 ダウンロード</a>` : 
@@ -620,32 +710,12 @@
       }
     }
 
-    // ページ読み込み時に履歴取得
+    // ページ読み込み時に設定と履歴を取得
+    loadCurrentConfig();
     loadJobs();
-    loadModels();
     
     // 定期的に履歴更新（処理中のものがある場合）
     setInterval(loadJobs, 5000);
-
-    // モデル一覧読み込み
-    async function loadModels() {
-      try {
-        const response = await fetch('/api/models');
-        const models = await response.json();
-        
-        const modelSelect = document.getElementById('model');
-        modelSelect.innerHTML = '<option value="">現在の設定を使用</option>';
-        
-        models.forEach(model => {
-          const option = document.createElement('option');
-          option.value = model.id;
-          option.textContent = `${model.id} (${model.size})`;
-          modelSelect.appendChild(option);
-        });
-      } catch (error) {
-        console.error('Failed to load models:', error);
-      }
-    }
   </script>
 </body>
 </html>
