@@ -349,6 +349,8 @@ async def transcribe_audio(
     job_id = str(uuid.uuid4())
     timestamp = time.time()
     
+    logger.info(f"New transcription job created: {job_id} for file: {file.filename}")
+    
     # ジョブ情報作成
     job_data = {
         "job_id": job_id,
@@ -379,6 +381,7 @@ async def transcribe_audio(
         
         # ジョブをキューに追加
         add_job(job_data)
+        logger.info(f"Job {job_id} added to queue")
         
         # バックグラウンドで処理開始
         threading.Thread(
@@ -386,6 +389,8 @@ async def transcribe_audio(
             args=(job_id, str(upload_path), language, task, model),
             daemon=True
         ).start()
+        
+        logger.info(f"Background processing started for job {job_id}")
         
         return {
             "job_id": job_id,
