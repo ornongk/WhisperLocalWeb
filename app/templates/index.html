@@ -379,6 +379,44 @@
       color: var(--primary-color);
     }
     
+    /* ダウンロードボタンスタイル */
+    .download-buttons {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    
+    .download-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 8px;
+      font-size: 0.75rem;
+      text-decoration: none;
+      color: white;
+      background-color: var(--primary-color);
+      border-radius: 4px;
+      transition: all 0.2s ease;
+      font-weight: 500;
+    }
+    
+    .download-btn:hover {
+      background-color: var(--primary-hover);
+      transform: translateY(-1px);
+    }
+    
+    .download-btn.txt { background-color: #10b981; }
+    .download-btn.srt { background-color: #f59e0b; }
+    .download-btn.vtt { background-color: #8b5cf6; }
+    .download-btn.json { background-color: #ef4444; }
+    
+    @media (max-width: 640px) {
+      .download-buttons {
+        flex-direction: column;
+        gap: 4px;
+      }
+    }
+    
     /* レスポンシブ調整 */
     @media (max-width: 768px) {
       body {
@@ -624,22 +662,21 @@
         }
 
         const result = await response.json();
+        console.log('Transcription started:', result);
         
         // 完了表示
         progressFill.style.width = '100%';
-        progressText.textContent = '完了！';
+        progressText.textContent = '処理開始完了！ジョブページに移動します...';
         
-        // フォームリセット
-        setTimeout(() => {
-          form.reset();
-          fileInfo.classList.remove('show');
-          progressContainer.classList.remove('show');
-          submitBtn.disabled = false;
-          submitBtn.textContent = '🚀 文字起こし開始';
-          
-          // 履歴更新
-          loadJobs();
-        }, 2000);
+        // 確実にジョブページにリダイレクト
+        if (result.job_id) {
+          setTimeout(() => {
+            console.log('Redirecting to:', `/job/${result.job_id}`);
+            window.location.href = `/job/${result.job_id}`;
+          }, 1000);
+        } else {
+          throw new Error('ジョブIDが取得できませんでした');
+        }
 
       } catch (error) {
         console.error('Error:', error);
@@ -678,28 +715,52 @@
                 <th>言語</th>
                 <th>ステータス</th>
                 <th>作成日時</th>
-                <th>結果</th>
+                <th>ダウンロード</th>
               </tr>
             </thead>
             <tbody>
-              ${jobs.map(job => `
-                <tr>
-                  <td>${job.filename}</td>
-                  <td>${job.language || '自動検出'}</td>
-                  <td>
-                    <span class="status-badge status-${job.status}">
-                      ${job.status === 'completed' ? '完了' : 
-                        job.status === 'processing' ? '処理中' : 'エラー'}
-                    </span>
-                  </td>
-                  <td>${new Date(job.created_at * 1000).toLocaleString('ja-JP')}</td>
-                  <td>
-                    ${job.status === 'completed' ? 
-                      `<a href="/api/jobs/${job.job_id}/download" class="btn btn-primary" style="padding: 6px 12px; font-size: 0.875rem;">📥 ダウンロード</a>` : 
-                      '-'}
-                  </td>
-                </tr>
-              `).join('')}
+              ${jobs.map(job => {
+                let downloadButtons = '';
+                if (job.status === 'completed') {
+                  downloadButtons = `
+                    <div class="download-buttons">
+                      <a href="/api/download/${job.job_id}/txt" class="download-btn txt" title="テキストファイル">📄 TXT</a>
+                      <a href="/api/download/${job.job_id}/srt" class="download-btn srt" title="SRT字幕ファイル">🎬 SRT</a>
+                      <a href="/api/download/${job.job_id}/vtt" class="download-btn vtt" title="WebVTT字幕ファイル">🌐 VTT</a>
+                      <a href="/api/download/${job.job_id}/json" class="download-btn json" title="JSON詳細データ">⚙️ JSON</a>
+                    </div>
+                  `;
+                } else if (job.status === 'processing') {
+                  downloadButtons = `
+                    <a href="/job/${job.job_id}" class="btn btn-primary" style="padding: 6px 12px; font-size: 0.875rem;">👁️ 進捗確認</a>
+                  `;
+                } else {
+                  downloadButtons = '-';
+                }
+
+                return `
+                  <tr>
+                    <td title="${job.filename}">${job.filename.length > 30 ? job.filename.substring(0, 30) + '...' : job.filename}</td>
+                    <td>${job.detected_language || job.language || '自動検出'}</td>
+                    <td>
+                      <span class="status-badge status-${job.status}">
+                        ${job.status === 'completed' ? '✅ 完了' : 
+                          job.status === 'processing' ? '⏳ 処理中' : '❌ エラー'}
+                      </span>
+                    </td>
+                    <td>${new Date(job.created_at * 1000).toLocaleString('ja-JP', {
+                      year: 'numeric',
+                      month: '2-digit',
+                      day: '2-digit',
+                      hour: '2-digit',
+                      minute: '2-digit'
+                    })}</td>
+                    <td>
+                      ${downloadButtons}
+                    </td>
+                  </tr>
+                `;
+              }).join('')}
             </tbody>
           </table>
         `;
@@ -707,6 +768,12 @@
         container.innerHTML = tableHTML;
       } catch (error) {
         console.error('Failed to load jobs:', error);
+        document.getElementById('jobs-container').innerHTML = `
+          <p style="color: var(--error-color); text-align: center; padding: 20px;">
+            ⚠️ 履歴の読み込みに失敗しました。<br>
+            ページを再読み込みしてください。
+          </p>
+        `;
       }
     }
 
