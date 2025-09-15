@@ -171,10 +171,49 @@ def update_job_status(job_id: str, status: str, **kwargs) -> None:
             break
     save_jobs()
 
+# ====== Output Format Functions ======
+def generate_srt(segments: List[Dict], output_path: pathlib.Path) -> None:
+    """Generate SRT subtitle file."""
+    def format_timestamp(seconds):
+        hours = int(seconds // 3600)
+        minutes = int((seconds % 3600) // 60)
+        secs = int(seconds % 60)
+        millisecs = int((seconds % 1) * 1000)
+        return f"{hours:02d}:{minutes:02d}:{secs:02d},{millisecs:03d}"
+    
+    with open(output_path, 'w', encoding='utf-8') as f:
+        for i, segment in enumerate(segments, 1):
+            start_time = format_timestamp(segment['start'])
+            end_time = format_timestamp(segment['end'])
+            text = segment['text'].strip()
+            
+            f.write(f"{i}\n")
+            f.write(f"{start_time} --> {end_time}\n")
+            f.write(f"{text}\n\n")
+
+def generate_vtt(segments: List[Dict], output_path: pathlib.Path) -> None:
+    """Generate WebVTT subtitle file."""
+    def format_timestamp(seconds):
+        hours = int(seconds // 3600)
+        minutes = int((seconds % 3600) // 60)
+        secs = seconds % 60
+        return f"{hours:02d}:{minutes:02d}:{secs:06.3f}"
+    
+    with open(output_path, 'w', encoding='utf-8') as f:
+        f.write("WEBVTT\n\n")
+        
+        for segment in segments:
+            start_time = format_timestamp(segment['start'])
+            end_time = format_timestamp(segment['end'])
+            text = segment['text'].strip()
+            
+            f.write(f"{start_time} --> {end_time}\n")
+            f.write(f"{text}\n\n")
+
 # ====== FastAPI App ======
 app = FastAPI(title="Local Web Transcriber", description="ローカル音声・動画文字起こしサービス")
 
-# Templates - 修正されたパス
+# Templates
 templates = Jinja2Templates(directory="/app/app/templates")
 
 # Load jobs on startup
@@ -192,7 +231,27 @@ async def settings_page(request: Request):
     """Settings page."""
     return templates.TemplateResponse("settings.html", {"request": request})
 
-# ====== 修正: ヘルスチェックエンドポイント追加 ======
+# ====== 新規追加: ジョブページエンドポイント ======
+@app.get("/job/{job_id}", response_class=HTMLResponse)
+async def job_page(request: Request, job_id: str):
+    """Job detail page."""
+    # ジョブの存在確認
+    job = None
+    for j in jobs_data:
+        if j["job_id"] == job_id:
+            job = j
+            break
+    
+    if not job:
+        raise HTTPException(status_code=404, detail="ジョブが見つかりません")
+    
+    return templates.TemplateResponse("job.html", {
+        "request": request,
+        "job_id": job_id,
+        "filename": job.get("filename", "")
+    })
+
+# ====== ヘルスチェックエンドポイント ======
 @app.get("/health")
 async def health_check():
     """Health check endpoint."""
@@ -376,7 +435,10 @@ def process_transcription_background(job_id: str, file_path: str, language: str,
             segments_data.append(segment_data)
             transcription_text += segment.text.strip() + "\n"
         
-        # 結果を保存
+        # 各種形式で結果を保存
+        base_path = OUTPUT_DIR / job_id
+        
+        # JSON形式（詳細データ）
         output_data = {
             "job_id": job_id,
             "language": info.language,
@@ -388,23 +450,36 @@ def process_transcription_background(job_id: str, file_path: str, language: str,
             "task": task
         }
         
-        output_path = OUTPUT_DIR / f"{job_id}.json"
-        with open(output_path, 'w', encoding='utf-8') as f:
+        json_path = base_path.with_suffix('.json')
+        with open(json_path, 'w', encoding='utf-8') as f:
             json.dump(output_data, f, indent=2, ensure_ascii=False)
         
-        # テキストファイルも保存
-        txt_path = OUTPUT_DIR / f"{job_id}.txt"
+        # TXT形式
+        txt_path = base_path.with_suffix('.txt')
         with open(txt_path, 'w', encoding='utf-8') as f:
             f.write(transcription_text.strip())
+        
+        # SRT形式（字幕）
+        srt_path = base_path.with_suffix('.srt')
+        generate_srt(segments_data, srt_path)
+        
+        # VTT形式（Web字幕）
+        vtt_path = base_path.with_suffix('.vtt')
+        generate_vtt(segments_data, vtt_path)
         
         # ジョブステータス更新
         update_job_status(
             job_id, 
             "completed",
             completed_at=time.time(),
-            output_path=str(output_path),
-            txt_path=str(txt_path),
+            output_files={
+                "json": str(json_path),
+                "txt": str(txt_path),
+                "srt": str(srt_path),
+                "vtt": str(vtt_path)
+            },
             detected_language=info.language,
+            language_probability=info.language_probability,
             duration=info.duration
         )
         
@@ -422,6 +497,53 @@ def process_transcription_background(job_id: str, file_path: str, language: str,
         except Exception as e:
             logger.error(f"Failed to delete upload file {file_path}: {e}")
 
+# ====== 新規追加: ジョブステータスAPI ======
+@app.get("/api/status/{job_id}")
+async def get_job_status(job_id: str):
+    """Get job status for job page."""
+    for job in jobs_data:
+        if job["job_id"] == job_id:
+            status_data = {
+                "job_id": job_id,
+                "status": job["status"],
+                "progress": 1.0 if job["status"] == "completed" else 0.5 if job["status"] == "processing" else 0.0,
+                "preview": "",
+                "error": job.get("error_message"),
+                "language": job.get("detected_language"),
+                "language_probability": job.get("language_probability"),
+                "duration": job.get("duration"),
+                "output_files": None
+            }
+            
+            # 完了時の追加情報
+            if job["status"] == "completed":
+                output_files = job.get("output_files", {})
+                if output_files:
+                    # TXTファイルからプレビューテキストを読み込み
+                    txt_path = output_files.get("txt")
+                    if txt_path and os.path.exists(txt_path):
+                        try:
+                            with open(txt_path, 'r', encoding='utf-8') as f:
+                                preview_text = f.read()
+                                # プレビュー用に最初の500文字程度に制限
+                                if len(preview_text) > 500:
+                                    preview_text = preview_text[:500] + "..."
+                                status_data["preview"] = preview_text
+                        except Exception as e:
+                            logger.error(f"Failed to read preview: {e}")
+                    
+                    # ダウンロードURL生成
+                    status_data["output_files"] = {
+                        "txt": f"/api/download/{job_id}/txt",
+                        "srt": f"/api/download/{job_id}/srt",
+                        "vtt": f"/api/download/{job_id}/vtt",
+                        "json": f"/api/download/{job_id}/json"
+                    }
+            
+            return status_data
+    
+    raise HTTPException(status_code=404, detail="ジョブが見つかりません")
+
 @app.get("/api/jobs")
 async def get_jobs():
     """Get job history."""
@@ -435,20 +557,48 @@ async def get_job_detail(job_id: str):
             return job
     raise HTTPException(status_code=404, detail="ジョブが見つかりません")
 
-@app.get("/api/jobs/{job_id}/download")
-async def download_result(job_id: str):
-    """Download transcription result."""
+# ====== 修正: 複数形式ダウンロードエンドポイント ======
+@app.get("/api/download/{job_id}/{format}")
+async def download_result(job_id: str, format: str):
+    """Download transcription result in specified format."""
+    valid_formats = ["txt", "srt", "vtt", "json"]
+    if format not in valid_formats:
+        raise HTTPException(status_code=400, detail=f"無効な形式: {format}")
+    
     for job in jobs_data:
         if job["job_id"] == job_id and job["status"] == "completed":
-            txt_path = OUTPUT_DIR / f"{job_id}.txt"
-            if txt_path.exists():
+            output_files = job.get("output_files", {})
+            file_path = output_files.get(format)
+            
+            if file_path and os.path.exists(file_path):
+                # ファイル名とMIMEタイプを設定
+                filename_mapping = {
+                    "txt": f"transcription_{job['filename']}.txt",
+                    "srt": f"subtitles_{job['filename']}.srt",
+                    "vtt": f"subtitles_{job['filename']}.vtt",
+                    "json": f"data_{job['filename']}.json"
+                }
+                
+                media_type_mapping = {
+                    "txt": "text/plain",
+                    "srt": "text/plain",
+                    "vtt": "text/vtt",
+                    "json": "application/json"
+                }
+                
                 return FileResponse(
-                    path=str(txt_path),
-                    filename=f"transcription_{job['filename']}.txt",
-                    media_type="text/plain"
+                    path=file_path,
+                    filename=filename_mapping[format],
+                    media_type=media_type_mapping[format]
                 )
     
     raise HTTPException(status_code=404, detail="結果ファイルが見つかりません")
+
+# ====== 既存のダウンロードエンドポイント（互換性維持） ======
+@app.get("/api/jobs/{job_id}/download")
+async def download_result_legacy(job_id: str):
+    """Download transcription result (legacy endpoint - TXT only)."""
+    return await download_result(job_id, "txt")
 
 @app.delete("/api/jobs/{job_id}")
 async def delete_job(job_id: str):
@@ -459,12 +609,13 @@ async def delete_job(job_id: str):
     for i, job in enumerate(jobs_data):
         if job["job_id"] == job_id:
             # ファイル削除
-            for path in [OUTPUT_DIR / f"{job_id}.json", OUTPUT_DIR / f"{job_id}.txt"]:
+            output_files = job.get("output_files", {})
+            for file_path in output_files.values():
                 try:
-                    if path.exists():
-                        path.unlink()
+                    if file_path and os.path.exists(file_path):
+                        os.unlink(file_path)
                 except Exception as e:
-                    logger.error(f"Failed to delete file {path}: {e}")
+                    logger.error(f"Failed to delete file {file_path}: {e}")
             
             # ジョブ削除
             jobs_data.pop(i)
