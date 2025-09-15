@@ -139,18 +139,13 @@
       border: 1px solid var(--border-color);
     }
     
-    .status-badge.queued {
-      background: var(--bg-hover);
-      color: var(--text-muted);
-    }
-    
-    .status-badge.running {
+    .status-badge.processing {
       background: var(--bg-warning);
       border-color: var(--warning-color);
       color: var(--warning-color);
     }
     
-    .status-badge.done {
+    .status-badge.completed {
       background: var(--bg-success);
       border-color: var(--success-color);
       color: var(--success-color);
@@ -202,6 +197,17 @@
     .btn-primary:hover {
       background: var(--primary-hover);
       border-color: var(--primary-hover);
+    }
+    
+    .btn-download {
+      background: var(--success-color);
+      color: white;
+      border-color: var(--success-color);
+    }
+    
+    .btn-download:hover {
+      background: #15803d;
+      border-color: #15803d;
     }
     
     .btn:disabled {
@@ -269,15 +275,6 @@
     
     @keyframes spin {
       to { transform: rotate(360deg); }
-    }
-    
-    .pulse {
-      animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-    }
-    
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.5; }
     }
     
     .error-message {
@@ -369,9 +366,9 @@
       </div>
       <div class="progress-info">
         <span id="progress-text">0%</span>
-        <span id="status-badge" class="status-badge queued">
+        <span id="status-badge" class="status-badge processing">
           <div class="loading"></div>
-          待機中
+          処理中
         </span>
       </div>
     </div>
@@ -394,16 +391,16 @@
   <section class="card" id="downloads-section" style="display: none;">
     <h2>📁 ダウンロード</h2>
     <div class="download-grid">
-      <a id="link_txt" class="btn" href="#" target="_blank" rel="noopener noreferrer" aria-label="テキストファイルをダウンロード">
+      <a id="link_txt" class="btn btn-download" href="#" target="_blank" rel="noopener noreferrer" aria-label="テキストファイルをダウンロード">
         📄 TXT
       </a>
-      <a id="link_srt" class="btn" href="#" target="_blank" rel="noopener noreferrer" aria-label="SRT字幕ファイルをダウンロード">
+      <a id="link_srt" class="btn btn-download" href="#" target="_blank" rel="noopener noreferrer" aria-label="SRT字幕ファイルをダウンロード">
         🎬 SRT
       </a>
-      <a id="link_vtt" class="btn" href="#" target="_blank" rel="noopener noreferrer" aria-label="WebVTT字幕ファイルをダウンロード">
+      <a id="link_vtt" class="btn btn-download" href="#" target="_blank" rel="noopener noreferrer" aria-label="WebVTT字幕ファイルをダウンロード">
         🌐 VTT
       </a>
-      <a id="link_json" class="btn" href="#" target="_blank" rel="noopener noreferrer" aria-label="JSON形式の詳細データをダウンロード">
+      <a id="link_json" class="btn btn-download" href="#" target="_blank" rel="noopener noreferrer" aria-label="JSON形式の詳細データをダウンロード">
         ⚙️ JSON
       </a>
     </div>
@@ -487,50 +484,28 @@ function formatDuration(seconds) {
 
 function normalizeText(text) {
   if (!text) return '';
-  // Convert visible \n sequences to actual newlines
-  return text.replace(/\\r\\n/g, '\\n').replace(/\\r/g, '\\n').replace(/\\n/g, '\n');
+  return text.replace(/\\r\\n/g, '\n').replace(/\\r/g, '\n').replace(/\\n/g, '\n');
 }
 
 // Status management
-const statusConfig = {
-  queued: {
-    text: '待機中',
-    icon: '⏳',
-    class: 'queued'
-  },
-  running: {
-    text: '処理中',
-    icon: '⚡',
-    class: 'running'
-  },
-  done: {
-    text: '完了',
-    icon: '✅',
-    class: 'done'
-  },
-  error: {
-    text: 'エラー',
-    icon: '❌',
-    class: 'error'
-  }
-};
-
 function updateStatus(status, progress = 0, error = null) {
-  const config = statusConfig[status] || statusConfig.queued;
+  console.log('Updating status:', status, progress);
   
   // Update progress bar
   const progressPercent = Math.round(progress * 100);
   elements.progressBar.style.width = `${progressPercent}%`;
-  elements.progressBar.className = `progress-bar ${config.class}`;
   elements.progressText.textContent = `${progressPercent}%`;
   
-  // Update status badge
-  elements.statusBadge.className = `status-badge ${config.class}`;
+  // Update status badge and progress bar class
+  elements.statusBadge.className = `status-badge ${status}`;
+  elements.progressBar.className = `progress-bar ${status === 'completed' ? 'success' : status === 'error' ? 'error' : ''}`;
   
-  if (status === 'running') {
-    elements.statusBadge.innerHTML = `<div class="loading"></div> ${config.text}`;
-  } else {
-    elements.statusBadge.innerHTML = `${config.icon} ${config.text}`;
+  if (status === 'processing') {
+    elements.statusBadge.innerHTML = `<div class="loading"></div> 処理中`;
+  } else if (status === 'completed') {
+    elements.statusBadge.innerHTML = `✅ 完了`;
+  } else if (status === 'error') {
+    elements.statusBadge.innerHTML = `❌ エラー`;
   }
   
   // Handle error display
@@ -538,7 +513,7 @@ function updateStatus(status, progress = 0, error = null) {
     elements.errorContainer.style.display = 'block';
     elements.errorMessage.innerHTML = escapeHtml(error);
     elements.successContainer.style.display = 'none';
-  } else if (status === 'done') {
+  } else if (status === 'completed') {
     elements.errorContainer.style.display = 'none';
     elements.successContainer.style.display = 'block';
   } else {
@@ -548,6 +523,8 @@ function updateStatus(status, progress = 0, error = null) {
 }
 
 function updateDownloads(outputFiles, metadata = {}) {
+  console.log('Updating downloads:', outputFiles, metadata);
+  
   if (!outputFiles) {
     elements.downloadsSection.style.display = 'none';
     return;
@@ -567,6 +544,7 @@ function updateDownloads(outputFiles, metadata = {}) {
     if (outputFiles[key]) {
       element.href = outputFiles[key];
       element.style.display = 'flex';
+      console.log(`Set ${key} download link:`, outputFiles[key]);
     } else {
       element.style.display = 'none';
     }
@@ -595,11 +573,14 @@ function updatePreview(previewText) {
 // API functions
 async function fetchJobStatus() {
   try {
+    console.log('Fetching job status for:', jobId);
     const response = await fetch(`/api/status/${jobId}`);
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${await response.text()}`);
     }
-    return await response.json();
+    const data = await response.json();
+    console.log('Job status response:', data);
+    return data;
   } catch (error) {
     console.error('Status fetch failed:', error);
     throw error;
@@ -613,7 +594,7 @@ async function pollJobStatus() {
     updateStatus(data.status, data.progress, data.error);
     updatePreview(data.preview);
     
-    if (data.status === 'done') {
+    if (data.status === 'completed') {
       updateDownloads(data.output_files, {
         language: data.language,
         language_probability: data.language_probability,
@@ -688,19 +669,11 @@ elements.refreshBtn.addEventListener('click', async () => {
   }, 1000);
 });
 
-// Connection status handling
-window.addEventListener('online', () => {
-  console.log('Connection restored');
-});
-
-window.addEventListener('offline', () => {
-  console.log('Connection lost');
-});
-
 // Initialize polling
 let pollInterval;
 
 async function startPolling() {
+  console.log('Starting polling for job:', jobId);
   // Initial poll
   const shouldStop = await pollJobStatus();
   
@@ -710,6 +683,7 @@ async function startPolling() {
       const shouldStop = await pollJobStatus();
       if (shouldStop && pollInterval) {
         clearInterval(pollInterval);
+        console.log('Polling stopped');
       }
     }, 2000);
   }
@@ -724,6 +698,7 @@ window.addEventListener('beforeunload', () => {
 
 // Start when page loads
 document.addEventListener('DOMContentLoaded', () => {
+  console.log('Page loaded, starting polling');
   startPolling();
 });
 
